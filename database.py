@@ -192,3 +192,36 @@ def get_all_user_folders(user_id: int):
     finally:
         if conn:
             conn.close()
+
+
+def add_file(folder_id: int, file_unique_id: str, file_id: str, file_name: str):
+    """
+    تضيف سجلاً جديدًا لملف في جدول files، مع ربطه بالمجلد المحدد.
+    Args:
+        folder_id (int): معرف المجلد الذي سيتم حفظ الملف فيه.
+        file_unique_id (str): المعرف الفريد والدائم للملف.
+        file_id (str): المعرف المستخدم لإعادة إرسال الملف.
+        file_name (str): اسم الملف الأصلي.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+
+        # تنفيذ أمر الإضافة إلى جدول files
+        cursor.execute(
+            "INSERT INTO files (folder_id, file_unique_id, file_id, file_name) VALUES (?, ?, ?, ?)",
+            (folder_id, file_unique_id, file_id, file_name)
+        )
+        
+        conn.commit()
+        print(f"تم تسجيل الملف {file_name} في المجلد {folder_id} بنجاح.")
+
+    except sqlite3.Error as e:
+        # معالجة خاصة لخطأ تكرار المفتاح الأساسي (محاولة حفظ نفس الملف مرتين)
+        if "UNIQUE constraint failed" in str(e):
+            print(f"خطأ: الملف بالمعرف الفريد {file_unique_id} موجود بالفعل في قاعدة البيانات.")
+        else:
+            print(f"حدث خطأ في قاعدة البيانات عند إضافة ملف: {e}")
+    finally:
+        if conn:
+            conn.close()
