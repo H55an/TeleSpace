@@ -70,3 +70,37 @@ def add_section(user_id: int, section_name: str):
         # 4. في كل الأحوال (سواء نجحت العملية أم فشلت)، نغلق الاتصال
         if conn:
             conn.close()
+
+
+def add_folder(owner_user_id: int, folder_name: str, section_id: int = None):
+    """
+    تضيف مجلدًا جديدًا. إذا تم توفير section_id، يتم وضع المجلد داخل هذا القسم.
+    وإلا، يتم اعتباره مجلدًا رئيسيًا.
+    Args:
+        owner_user_id (int): معرف المستخدم مالك المجلد.
+        folder_name (str): اسم المجلد الجديد.
+        section_id (int, optional): معرف القسم الذي ينتمي إليه المجلد. Defaults to None.
+    """
+    try:
+        # 1. نتصل بقاعدة البيانات
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+
+        # 2. تنفيذ أمر الإضافة (INSERT)
+        #    لاحظ أننا نضيف إلى جدول folders ونحدد الأعمدة الثلاثة
+        cursor.execute("INSERT INTO folders (owner_user_id, folder_name, section_id) VALUES (?, ?, ?)",
+                       (owner_user_id, folder_name, section_id))
+        
+        # 3. حفظ التغيير بشكل دائم
+        conn.commit()
+        if section_id:
+            print(f"تمت إضافة مجلد '{folder_name}' للمستخدم {owner_user_id} داخل القسم {section_id}.")
+        else:
+            print(f"تمت إضافة مجلد رئيسي '{folder_name}' للمستخدم {owner_user_id}.")
+
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند إضافة مجلد: {e}")
+    finally:
+        # 4. إغلاق الاتصال في كل الأحوال
+        if conn:
+            conn.close()
