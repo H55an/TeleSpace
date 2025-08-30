@@ -104,3 +104,55 @@ def add_folder(owner_user_id: int, folder_name: str, section_id: int = None):
         # 4. إغلاق الاتصال في كل الأحوال
         if conn:
             conn.close()
+
+
+def get_user_sections(user_id: int):
+    """
+    تجلب كل الأقسام الخاصة بمستخدم معين.
+    Returns:
+        list: قائمة من الصفوف (tuples)، كل صف يحتوي على (section_id, section_name).
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        # نستخدم row_factory لجعل النتائج أكثر قابلية للقراءة (مثل القواميس)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # SELECT: اختر الأعمدة section_id, section_name
+        # FROM sections: من جدول الأقسام
+        # WHERE user_id = ?: بشرط أن يكون user_id مطابقًا للمستخدم المطلوب
+        cursor.execute("SELECT section_id, section_name FROM sections WHERE user_id = ?", (user_id,))
+        sections = cursor.fetchall() # .fetchall() تجلب كل النتائج المطابقة
+        return sections
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند جلب الأقسام: {e}")
+        return [] # نرجع قائمة فارغة في حالة حدوث خطأ
+    finally:
+        if conn:
+            conn.close()
+
+def get_user_root_folders(user_id: int):
+    """
+    تجلب كل المجلدات الرئيسية (التي لا تنتمي لقسم) الخاصة بمستخدم معين.
+    Returns:
+        list: قائمة من الصفوف، كل صف يحتوي على (folder_id, folder_name).
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # WHERE section_id IS NULL: هذا هو الشرط السحري الذي يختار فقط المجلدات
+        # التي لا ترتبط بأي قسم (قيمتها NULL)
+        cursor.execute(
+            "SELECT folder_id, folder_name FROM folders WHERE owner_user_id = ? AND section_id IS NULL",
+            (user_id,)
+        )
+        folders = cursor.fetchall()
+        return folders
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند جلب المجلدات الرئيسية: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
