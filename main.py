@@ -8,6 +8,9 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # 2. استيراد التوكن من ملف الإعدادات
 import config
 
+# استيراد دالة قاعدة البيانات الجديدة
+from database import add_user_if_not_exists 
+
 # 3. تعريف دالة أمر /start
 #    هذه الدالة سيتم استدعاؤها في كل مرة يرسل فيها المستخدم أمر /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -17,6 +20,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     # نحصل على معلومات المستخدم الذي أرسل الأمر للترحيب به باسمه
     
+    #   استدعاء دالة قاعدة البيانات قبل إرسال الرد
+    #    نقوم بتمرير معرف واسم المستخدم للدالة
+    add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
+
     # نرسل رسالة ترحيبية كرد على المستخدم
     await update.message.reply_html(
         f"أهلاً بك يا {user.mention_html()}! أنا بوت TeleSpace، مساعدك لتنظيم ملفاتك.",
