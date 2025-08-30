@@ -156,3 +156,39 @@ def get_user_root_folders(user_id: int):
     finally:
         if conn:
             conn.close()
+
+def get_all_user_folders(user_id: int):
+    """
+    تجلب كل مجلدات المستخدم مع أسماء الأقسام التي تنتمي إليها (إن وجدت).
+    Returns:
+        list: قائمة من الصفوف، كل صف يحتوي على (folder_id, folder_name, section_name).
+              section_name سيكون None إذا كان المجلد رئيسيًا.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # نستخدم LEFT JOIN لربط المجلدات بالأقسام
+        # سيتم جلب كل المجلدات، حتى لو لم تكن مرتبطة بقسم (سيكون section_name هو NULL)
+        cursor.execute("""
+            SELECT 
+                f.folder_id, 
+                f.folder_name, 
+                s.section_name 
+            FROM 
+                folders f
+            LEFT JOIN 
+                sections s ON f.section_id = s.section_id
+            WHERE 
+                f.owner_user_id = ?
+        """, (user_id,))
+        
+        all_folders = cursor.fetchall()
+        return all_folders
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند جلب كل المجلدات: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
