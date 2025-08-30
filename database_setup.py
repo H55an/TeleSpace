@@ -37,7 +37,9 @@ def setup_database():
         section_id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         section_name TEXT NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES users (user_id)
+        parent_section_id INTEGER, 
+        FOREIGN KEY (user_id) REFERENCES users (user_id),
+        FOREIGN KEY (parent_section_id) REFERENCES sections (section_id)
     )
     """)
 
