@@ -21,6 +21,27 @@ from database import (
     add_folder # #[إضافة جديدة]: استيراد دالة إضافة المجلد
 )
 
+async def forward_file_to_storage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
+    """
+    يعيد توجيه الرسالة التي تحتوي على ملف إلى قناة التخزين.
+    Returns:
+        str | None: يعيد file_unique_id للملف المعاد توجيهه، أو None في حالة الفشل.
+    """
+    try:
+        # نقوم بإعادة توجيه الرسالة الأصلية كما هي إلى القناة المحددة في config
+        forwarded_message = await update.message.forward(chat_id=config.STORAGE_CHANNEL_ID)
+        
+        # تيليجرام ذكي بما يكفي ليعطينا معلومات الملف من الرسالة المعاد توجيهها
+        # نستخدم getattr للوصول إلى الخاصية المناسبة سواء كانت مستند، صورة، إلخ
+        file = forwarded_message.document or forwarded_message.video or forwarded_message.photo[-1] or forwarded_message.audio
+        if file:
+            return file.file_unique_id
+    except Exception as e:
+        print(f"حدث خطأ أثناء إعادة توجيه الملف: {e}")
+        return None
+    return None
+
+
 # --- تعريف حالات المحادثة ---
 # #[إضافة جديدة]: أضفنا حالة جديدة لاختيار موقع المجلد
 AWAITING_SECTION_NAME, AWAITING_FOLDER_NAME, AWAITING_FOLDER_LOCATION = range(3)
@@ -146,6 +167,11 @@ async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE
 def main() -> None:
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
     
+    file_handler = MessageHandler(
+        filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO,
+        None # سنترك الدالة هنا فارغة مؤقتًا، سنملؤها في المهمة التالية
+    )
+
     # معالج محادثة إنشاء قسم (يبقى كما هو)
     new_section_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(new_section_start, pattern="^new_section$")],
@@ -162,7 +188,8 @@ def main() -> None:
         },
         fallbacks=[CommandHandler("cancel", cancel_conversation)],
     )
-
+    
+    application.add_handler(file_handler)
     application.add_handler(new_section_conv_handler)
     application.add_handler(new_folder_conv_handler) # #[إضافة جديدة]: تسجيل المعالج الجديد
     application.add_handler(CommandHandler("start", start))
