@@ -1,50 +1,37 @@
 # main.py
 
-# 1. استيراد المكتبات اللازمة
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# 2. استيراد التوكن من ملف الإعدادات
 import config
-
-# استيراد دالة قاعدة البيانات الجديدة
 from database import add_user_if_not_exists 
 
-# 3. تعريف دالة أمر /start
-#    هذه الدالة سيتم استدعاؤها في كل مرة يرسل فيها المستخدم أمر /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # update: يحتوي على كل المعلومات الواردة من المستخدم (من هو، ما هي الرسالة، إلخ)
-    # context: كائن يمكن استخدامه لتمرير معلومات إضافية داخل البوت (لن نستخدمه الآن)
-    
     user = update.effective_user
-    # نحصل على معلومات المستخدم الذي أرسل الأمر للترحيب به باسمه
-    
-    #   استدعاء دالة قاعدة البيانات قبل إرسال الرد
-    #    نقوم بتمرير معرف واسم المستخدم للدالة
     add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
-
-    # نرسل رسالة ترحيبية كرد على المستخدم
+    
     await update.message.reply_html(
         f"أهلاً بك يا {user.mention_html()}! أنا بوت TeleSpace، مساعدك لتنظيم ملفاتك.",
     )
 
-# 4. تعريف الدالة الرئيسية لتشغيل البوت
 def main() -> None:
-    # إنشاء كائن "التطبيق" وربطه بتوكن البوت الخاص بنا
+    """
+    الدالة الرئيسية لتشغيل البوت. هذه هي الطريقة الموصى بها.
+    """
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
 
-    # تسجيل معالج الأوامر: نخبر التطبيق أنه عندما يتلقى أمرًا اسمه "start"
-    # يجب عليه استدعاء الدالة التي اسمها start
+    # تسجيل معالج الأوامر
     application.add_handler(CommandHandler("start", start))
-
+    
     # طباعة رسالة في الطرفية لتأكيد أن البوت يعمل
     print("Bot is running...")
-
-    # تشغيل البوت: سيبدأ البوت في الاستماع بشكل مستمر لأي رسائل جديدة من تيليجرام
+    
+    # **[التغيير الوحيد والمهم]**: تشغيل البوت باستخدام run_polling
+    # هذه الدالة تقوم بكل شيء: التجهيز، التشغيل، وإدارة حلقة الأحداث بنفسها.
     application.run_polling()
 
-# 5. نقطة انطلاق البرنامج
-#    هذا السطر يتأكد من أن دالة main() سيتم تشغيلها فقط عندما نقوم بتشغيل هذا الملف مباشرة
+
+# نقطة انطلاق البرنامج
 if __name__ == "__main__":
     main()
