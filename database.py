@@ -39,3 +39,34 @@ def add_user_if_not_exists(user_id: int, first_name: str):
         # 3. التأكد من إغلاق الاتصال دائمًا
         if conn:
             conn.close()
+
+
+def add_section(user_id: int, section_name: str):
+    """
+    تضيف قسمًا جديدًا مرتبطًا بمستخدم معين.
+    Args:
+        user_id (int): معرف المستخدم صاحب القسم.
+        section_name (str): اسم القسم الجديد.
+    """
+    try:
+        # 1. نتصل بقاعدة البيانات
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+
+        # 2. تنفيذ أمر الإضافة (INSERT)
+        #    نضيف صفًا جديدًا إلى جدول sections
+        #    ونقوم بتمرير user_id و section_name كقيم
+        cursor.execute("INSERT INTO sections (user_id, section_name) VALUES (?, ?)",
+                       (user_id, section_name))
+        
+        # 3. حفظ التغيير بشكل دائم في قاعدة البيانات
+        conn.commit()
+        print(f"تمت إضافة قسم '{section_name}' للمستخدم {user_id} بنجاح.")
+
+    except sqlite3.Error as e:
+        # في حال حدوث أي خطأ في قاعدة البيانات، نقوم بطباعته
+        print(f"حدث خطأ في قاعدة البيانات عند إضافة قسم: {e}")
+    finally:
+        # 4. في كل الأحوال (سواء نجحت العملية أم فشلت)، نغلق الاتصال
+        if conn:
+            conn.close()
