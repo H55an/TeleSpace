@@ -10,7 +10,8 @@ from telegram.ext import (
 import config
 from database import (
     add_user_if_not_exists, get_user_sections, get_user_root_folders,
-    add_section, add_folder, get_all_user_folders # #[إضافة جديدة]: استيراد الدالة الجديدة
+    add_section, add_folder, get_all_user_folders, # #[إضافة جديدة]: استيراد الدالة الجديدة
+    add_file 
 )
 
 # --- تعريف حالات المحادثة ---
@@ -167,11 +168,16 @@ async def save_file_to_location(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("عذرًا، يبدو أن معلومات الملف قد ضاعت. يرجى المحاولة مرة أخرى.")
         return ConversationHandler.END
 
-    # (مهمة قادمة) هنا سنقوم باستدعاء دالة قاعدة البيانات لحفظ الملف
-    # add_file(folder_id=folder_id, file_info=file_info)
+   # نستدعي دالة قاعدة البيانات ونمرر لها المعلومات التي جمعناها
+    add_file(
+        folder_id=folder_id,
+        file_unique_id=file_info['file_unique_id'],
+        file_id=file_info['file_id'],
+        file_name=file_info['file_name']
+    )
+    # ---------------------------------------------
     
-    await query.edit_message_text(f"✅ تم حفظ الملف بنجاح في المجلد المحدد! (رقم المجلد: {folder_id})")
-
+    await query.edit_message_text(f"✅ تم حفظ الملف بنجاح!")
     context.user_data.clear() # ننظف الذاكرة المؤقتة
     return ConversationHandler.END
 
