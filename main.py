@@ -18,21 +18,16 @@ from database import (
     get_user_sections, 
     get_user_root_folders,
     add_section,
-    add_folder # #[إضافة جديدة]: استيراد دالة إضافة المجلد
+    add_folder
 )
 
+AWAITING_SECTION_NAME, AWAITING_FOLDER_NAME, AWAITING_FOLDER_LOCATION = range(3)
+
+# --- الدوال الوسيطة ---
 async def forward_file_to_storage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
-    """
-    يعيد توجيه الرسالة التي تحتوي على ملف إلى قناة التخزين.
-    Returns:
-        str | None: يعيد file_unique_id للملف المعاد توجيهه، أو None في حالة الفشل.
-    """
+    # ... (هذه الدالة تبقى كما هي تمامًا) ...
     try:
-        # نقوم بإعادة توجيه الرسالة الأصلية كما هي إلى القناة المحددة في config
         forwarded_message = await update.message.forward(chat_id=config.STORAGE_CHANNEL_ID)
-        
-        # تيليجرام ذكي بما يكفي ليعطينا معلومات الملف من الرسالة المعاد توجيهها
-        # نستخدم getattr للوصول إلى الخاصية المناسبة سواء كانت مستند، صورة، إلخ
         file = forwarded_message.document or forwarded_message.video or forwarded_message.photo[-1] or forwarded_message.audio
         if file:
             return file.file_unique_id
@@ -41,14 +36,26 @@ async def forward_file_to_storage(update: Update, context: ContextTypes.DEFAULT_
         return None
     return None
 
+# --- #[تعديل هنا 1]: إنشاء دالة المعالج الفعلية ---
+async def file_received_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    هذه الدالة هي التي سيتم استدعاؤها عند استلام أي ملف.
+    """
+    print("تم استلام ملف من المستخدم...")
+    
+    # الخطوة 1: إعادة توجيه الملف إلى القناة
+    unique_id = await forward_file_to_storage(update, context)
+    
+    if unique_id:
+        print(f"تمت إعادة توجيه الملف بنجاح. Unique ID: {unique_id}")
+        # هنا سنبدأ محادثة حفظ الملف في المهمة القادمة
+        await update.message.reply_text("تم استلام الملف بنجاح! سيتم الآن تحديد مكان الحفظ.")
+    else:
+        await update.message.reply_text("عذرًا، حدث خطأ أثناء معالجة الملف. يرجى المحاولة مرة أخرى.")
 
-# --- تعريف حالات المحادثة ---
-# #[إضافة جديدة]: أضفنا حالة جديدة لاختيار موقع المجلد
-AWAITING_SECTION_NAME, AWAITING_FOLDER_NAME, AWAITING_FOLDER_LOCATION = range(3)
-
-# --- الدوال الأساسية (تبقى كما هي) ---
+# ... (بقية دوال البوت مثل start و build_main_menu_keyboard ومحادثات الإنشاء تبقى كما هي) ...
+# ... (لا تقم بحذف أي شيء من هنا) ...
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # ... (هذه الدالة تبقى كما هي تمامًا) ...
     user = update.effective_user
     add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
     keyboard = await build_main_menu_keyboard(user.id)
@@ -59,15 +66,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.callback_query.message.edit_text(reply_text, reply_markup=keyboard, parse_mode='HTML')
 
 async def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    # ... (هذه الدالة تبقى كما هي تمامًا) ...
     keyboard_layout = []
     sections = get_user_sections(user_id)
     root_folders = get_user_root_folders(user_id)
     if sections:
-        section_buttons = [InlineKeyboardButton(f"🗂️{s['section_name']}", callback_data=f"section:{s['section_id']}") for s in sections]
+        section_buttons = [InlineKeyboardButton(f"📂 {s['section_name']}", callback_data=f"section:{s['section_id']}") for s in sections]
         keyboard_layout.append(section_buttons)
     if root_folders:
-        folder_buttons = [InlineKeyboardButton(f"📁{f['folder_name']}", callback_data=f"folder:{f['folder_id']}") for f in root_folders]
+        folder_buttons = [InlineKeyboardButton(f"📁 {f['folder_name']}", callback_data=f"folder:{f['folder_id']}") for f in root_folders]
         keyboard_layout.append(folder_buttons)
     control_buttons = [
         InlineKeyboardButton("➕ قسم جديد", callback_data="new_section"),
@@ -76,16 +82,13 @@ async def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     keyboard_layout.append(control_buttons)
     return InlineKeyboardMarkup(keyboard_layout)
 
-# --- دوال محادثة إنشاء قسم (تبقى كما هي) ---
 async def new_section_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # ... (هذه الدالة تبقى كما هي تمامًا) ...
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(text="يرجى إرسال اسم القسم الجديد:")
     return AWAITING_SECTION_NAME
 
 async def receive_section_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # ... (هذه الدالة تبقى كما هي تمامًا) ...
     user = update.effective_user
     section_name = update.message.text
     add_section(user_id=user.id, section_name=section_name)
@@ -93,72 +96,43 @@ async def receive_section_name(update: Update, context: ContextTypes.DEFAULT_TYP
     await start(update, context)
     return ConversationHandler.END
 
-# --- #[إضافة جديدة]: دوال محادثة إنشاء مجلد ---
-
 async def new_folder_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """ الخطوة الأولى في إنشاء مجلد: سؤال المستخدم عن الموقع. """
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
-    
-    # بناء لوحة أزرار لاختيار الموقع
     keyboard = []
-    # إضافة زر لإنشاء المجلد في القائمة الرئيسية
-    keyboard.append([InlineKeyboardButton("🔝في القائمة الرئيسية", callback_data="folder_loc_root")])
-    
-    # إضافة أزرار لكل قسم موجود
+    keyboard.append([InlineKeyboardButton("🔝 في القائمة الرئيسية", callback_data="folder_loc_root")])
     sections = get_user_sections(user_id)
     for section in sections:
-        keyboard.append([InlineKeyboardButton(f"📂داخل قسم: {section['section_name']}", callback_data=f"folder_loc_sec:{section['section_id']}")])
-
+        keyboard.append([InlineKeyboardButton(f"📂 داخل قسم: {section['section_name']}", callback_data=f"folder_loc_sec:{section['section_id']}")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(text="أين تريد إنشاء المجلد الجديد؟", reply_markup=reply_markup)
-    
     return AWAITING_FOLDER_LOCATION
 
 async def folder_location_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """ الخطوة الثانية: استلام الموقع وتخزينه، ثم طلب اسم المجلد. """
     query = update.callback_query
     await query.answer()
-    
-    # callback_data ستكون إما 'folder_loc_root' أو 'folder_loc_sec:123'
     location_data = query.data
-    
     if location_data == "folder_loc_root":
-        # نخزن في الذاكرة المؤقتة أن المستخدم اختار القائمة الرئيسية
         context.user_data['selected_section_id'] = None
         await query.edit_message_text(text="اخترت القائمة الرئيسية. الآن، أرسل اسم المجلد الجديد:")
     else:
-        # نستخرج رقم القسم من callback_data
         section_id = int(location_data.split(':')[1])
-        # نخزن رقم القسم المختار في الذاكرة المؤقتة
         context.user_data['selected_section_id'] = section_id
         await query.edit_message_text(text="اخترت القسم. الآن، أرسل اسم المجلد الجديد:")
-        
     return AWAITING_FOLDER_NAME
 
 async def receive_folder_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """ الخطوة الثالثة والأخيرة: استلام الاسم وإنشاء المجلد. """
     user = update.effective_user
     folder_name = update.message.text
-    
-    # نسترجع الموقع الذي تم اختياره من الذاكرة المؤقتة
     section_id = context.user_data.get('selected_section_id')
-    
-    # نستخدم دالة قاعدة البيانات لإنشاء المجلد
     add_folder(owner_user_id=user.id, folder_name=folder_name, section_id=section_id)
-    
     await update.message.reply_text(f"✅ تم إنشاء مجلد '{folder_name}' بنجاح!")
-    
-    # ننظف الذاكرة المؤقتة بعد الاستخدام
     context.user_data.clear()
-    
-    await start(update, context) # نعود للقائمة الرئيسية المحدثة
+    await start(update, context)
     return ConversationHandler.END
 
-
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # ... (هذه الدالة تبقى كما هي تمامًا) ...
     await update.message.reply_text("تم إلغاء العملية.")
     await start(update, context)
     return ConversationHandler.END
@@ -167,19 +141,19 @@ async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE
 def main() -> None:
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
     
+    # --- #[تعديل هنا 2]: استبدال None باسم الدالة الجديدة ---
     file_handler = MessageHandler(
         filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO,
-        None # سنترك الدالة هنا فارغة مؤقتًا، سنملؤها في المهمة التالية
+        file_received_handler
     )
+    # --------------------------------------------------------
 
-    # معالج محادثة إنشاء قسم (يبقى كما هو)
     new_section_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(new_section_start, pattern="^new_section$")],
         states={AWAITING_SECTION_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_section_name)]},
         fallbacks=[CommandHandler("cancel", cancel_conversation)],
     )
 
-    # #[إضافة جديدة]: معالج محادثة إنشاء مجلد
     new_folder_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(new_folder_start, pattern="^new_folder$")],
         states={
@@ -188,10 +162,10 @@ def main() -> None:
         },
         fallbacks=[CommandHandler("cancel", cancel_conversation)],
     )
-    
+
     application.add_handler(file_handler)
     application.add_handler(new_section_conv_handler)
-    application.add_handler(new_folder_conv_handler) # #[إضافة جديدة]: تسجيل المعالج الجديد
+    application.add_handler(new_folder_conv_handler)
     application.add_handler(CommandHandler("start", start))
     
     print("Bot is running...")
