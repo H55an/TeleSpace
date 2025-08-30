@@ -1,1 +1,2 @@
 TELEGRAM_BOT_TOKEN = "7531104977:AAFulheOQcYovKneKhoNWkF5l7QPRzYxL8g"
+DB_NAME = "telespace.db"
