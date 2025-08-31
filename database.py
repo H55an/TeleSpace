@@ -155,40 +155,38 @@ def get_folders_in_section(section_id: int):
 
 # --- دوال الملفات (تبقى كما هي) ---
 
-def add_file(folder_id: int, file_unique_id: str, file_id: str, file_name: str, file_type: str, caption: str | None):
-    """ #[تعديل]: أصبحت الدالة الآن تستقبل وتحفظ caption """
+def add_item(folder_id: int, item_name: str, item_type: str, content: str, file_unique_id: str = None, file_id: str = None):
+    """ يضيف أي عنصر (ملف أو نص) إلى قاعدة البيانات. """
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO files (folder_id, file_unique_id, file_id, file_name, file_type, caption) VALUES (?, ?, ?, ?, ?, ?)",
-            (folder_id, file_unique_id, file_id, file_name, file_type, caption)
+            "INSERT INTO items (folder_id, item_name, item_type, content, file_unique_id, file_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (folder_id, item_name, item_type, content, file_unique_id, file_id)
         )
         conn.commit()
-    # ... (بقية الدالة كما هي)
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند إضافة ملف: {e}")
+        print(f"حدث خطأ في قاعدة البيانات عند إضافة عنصر: {e}")
     finally:
         if conn:
             conn.close()
 
-def get_files_paginated(folder_id: int, limit: int, offset: int):
-    """ #[تعديل]: أصبحت الدالة الآن تجلب caption أيضًا """
+def get_items_paginated(folder_id: int, limit: int, offset: int):
+    """ يجلب العناصر من مجلد لإرسالها. """
     try:
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM files WHERE folder_id = ?", (folder_id,))
-        total_files = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM items WHERE folder_id = ?", (folder_id,))
+        total_items = cursor.fetchone()[0]
         cursor.execute(
-            "SELECT file_id, file_name, file_type, caption FROM files WHERE folder_id = ? LIMIT ? OFFSET ?",
+            "SELECT item_name, item_type, content, file_id FROM items WHERE folder_id = ? ORDER BY item_record_id ASC LIMIT ? OFFSET ?",
             (folder_id, limit, offset)
         )
-        files_page = cursor.fetchall()
-        return files_page, total_files
-    # ... (بقية الدالة كما هي)
+        items_page = cursor.fetchall()
+        return items_page, total_items
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند جلب الملفات المقسمة: {e}")
+        print(f"حدث خطأ في قاعدة البيانات عند جلب العناصر المقسمة: {e}")
         return [], 0
     finally:
         if conn:

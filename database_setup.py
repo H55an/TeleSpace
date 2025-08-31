@@ -57,18 +57,25 @@ def setup_database():
     
     # --- جدول الملفات ---
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS files (
-        file_record_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        folder_id INTEGER NOT NULL,
-        file_unique_id TEXT NOT NULL,
-        file_id TEXT NOT NULL,
-        file_name TEXT,
-        file_type TEXT NOT NULL,
-        -- #[الإضافة الجديدة هنا]
-        caption TEXT, 
-        FOREIGN KEY (folder_id) REFERENCES folders (folder_id)
-    )
-    """)
+    CREATE TABLE IF NOT EXISTS items (
+    item_record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    folder_id INTEGER NOT NULL,
+
+    -- أصبح اختياريًا (NULL للرسائل النصية)
+    file_unique_id TEXT, 
+
+    -- أصبح اختياريًا (NULL للرسائل النصية)
+    file_id TEXT, 
+
+    item_name TEXT,
+    item_type TEXT NOT NULL,
+
+    -- سيحتوي على وصف الملفات، أو النص الكامل للرسائل
+    content TEXT,
+
+    FOREIGN KEY (folder_id) REFERENCES folders (folder_id)
+)
+""")
 
     # --- جدول المجلدات المشتركة ---
     cursor.execute("""

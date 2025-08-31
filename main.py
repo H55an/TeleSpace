@@ -1,3 +1,5 @@
+# main.py
+
 from telegram.ext import (
     Application, 
     CommandHandler, 
@@ -14,13 +16,14 @@ import handlers
 
 def main() -> None:
     """
-    نقطة انطلاق البوت.
+    نقطة انطلاق البوت. تقوم بإنشاء التطبيق، تسجيل المعالجات، وتشغيل البوت.
     """
     # 1. إنشاء التطبيق
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
 
     # 2. إعداد وتسجيل المعالجات (Handlers)
-    # معالج محادثة إنشاء قسم
+
+    # معالج محادثة إنشاء قسم (يبقى كما هو)
     section_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(handlers.new_section_prompt, pattern="^new_section_root$"),
@@ -30,7 +33,7 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
     )
 
-    # معالج محادثة إنشاء مجلد
+    # معالج محادثة إنشاء مجلد (يبقى كما هو)
     folder_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(handlers.new_folder_prompt, pattern="^new_folder_root$"),
@@ -40,24 +43,30 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
     )
 
-    # معالج محادثة حفظ الملفات
-    save_file_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO, handlers.file_received_handler)],
-        states={AWAITING_SAVE_LOCATION: [CallbackQueryHandler(handlers.save_location_selected, pattern="^save_to_folder:")]},
-        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation), CommandHandler("start", handlers.start)],
+    # #[التغيير الرئيسي هنا]: محادثة إضافة الملفات الموجهة الجديدة
+    upload_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(handlers.add_files_start, pattern="^add_files_to:")],
+        states={
+            # في هذه الحالة، نستمع لأي نوع من الرسائل (ملفات، نصوص، صور، الخ) طالما أنها ليست أمرًا
+            AWAITING_FILES_FOR_UPLOAD: [MessageHandler(filters.ALL & ~filters.COMMAND, handlers.collect_files_and_save)]
+        },
+        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
     )
 
     # تسجيل كل المعالجات في التطبيق
+    # يتم تسجيل المحادثات أولاً لتكون لها الأولوية في التقاط التحديثات
     application.add_handler(section_conv)
     application.add_handler(folder_conv)
-    application.add_handler(save_file_conv)
+    application.add_handler(upload_conv) # <-- تسجيل المحادثة الجديدة
+    
+    # ثم يتم تسجيل الأوامر والمعالج العام للأزرار
     application.add_handler(CommandHandler("start", handlers.start))
     application.add_handler(CallbackQueryHandler(handlers.button_press_router))
     
     # 3. تشغيل البوت
-    # هذه الدالة وحدها ستقوم بكل شيء: التجهيز، التشغيل، والاستماع، والإيقاف الآمن
-    print("Bot is running...")
+    print("Bot is running... Press Ctrl+C to stop.")
     application.run_polling()
 
 if __name__ == "__main__":
     main()
+
