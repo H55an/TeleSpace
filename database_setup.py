@@ -58,10 +58,14 @@ def setup_database():
     # --- جدول الملفات ---
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS files (
-        file_unique_id TEXT PRIMARY KEY,
+        file_record_id INTEGER PRIMARY KEY AUTOINCREMENT,
         folder_id INTEGER NOT NULL,
+        file_unique_id TEXT NOT NULL,
         file_id TEXT NOT NULL,
         file_name TEXT,
+        file_type TEXT NOT NULL,
+        -- #[الإضافة الجديدة هنا]
+        caption TEXT, 
         FOREIGN KEY (folder_id) REFERENCES folders (folder_id)
     )
     """)

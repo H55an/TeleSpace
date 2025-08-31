@@ -155,28 +155,25 @@ def get_folders_in_section(section_id: int):
 
 # --- دوال الملفات (تبقى كما هي) ---
 
-def add_file(folder_id: int, file_unique_id: str, file_id: str, file_name: str):
-    # ... (هذه الدالة تبقى كما هي تمامًا) ...
+def add_file(folder_id: int, file_unique_id: str, file_id: str, file_name: str, file_type: str, caption: str | None):
+    """ #[تعديل]: أصبحت الدالة الآن تستقبل وتحفظ caption """
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO files (folder_id, file_unique_id, file_id, file_name) VALUES (?, ?, ?, ?)",
-            (folder_id, file_unique_id, file_id, file_name)
+            "INSERT INTO files (folder_id, file_unique_id, file_id, file_name, file_type, caption) VALUES (?, ?, ?, ?, ?, ?)",
+            (folder_id, file_unique_id, file_id, file_name, file_type, caption)
         )
         conn.commit()
-        print(f"تم تسجيل الملف {file_name} في المجلد {folder_id} بنجاح.")
+    # ... (بقية الدالة كما هي)
     except sqlite3.Error as e:
-        if "UNIQUE constraint failed" in str(e):
-            print(f"خطأ: الملف بالمعرف الفريد {file_unique_id} موجود بالفعل في قاعدة البيانات.")
-        else:
-            print(f"حدث خطأ في قاعدة البيانات عند إضافة ملف: {e}")
+        print(f"حدث خطأ في قاعدة البيانات عند إضافة ملف: {e}")
     finally:
         if conn:
             conn.close()
 
 def get_files_paginated(folder_id: int, limit: int, offset: int):
-    # ... (هذه الدالة تبقى كما هي تمامًا) ...
+    """ #[تعديل]: أصبحت الدالة الآن تجلب caption أيضًا """
     try:
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
@@ -184,14 +181,46 @@ def get_files_paginated(folder_id: int, limit: int, offset: int):
         cursor.execute("SELECT COUNT(*) FROM files WHERE folder_id = ?", (folder_id,))
         total_files = cursor.fetchone()[0]
         cursor.execute(
-            "SELECT file_id, file_name FROM files WHERE folder_id = ? LIMIT ? OFFSET ?",
+            "SELECT file_id, file_name, file_type, caption FROM files WHERE folder_id = ? LIMIT ? OFFSET ?",
             (folder_id, limit, offset)
         )
         files_page = cursor.fetchall()
         return files_page, total_files
+    # ... (بقية الدالة كما هي)
     except sqlite3.Error as e:
         print(f"حدث خطأ في قاعدة البيانات عند جلب الملفات المقسمة: {e}")
         return [], 0
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_all_user_folders(user_id: int):
+    """
+    تجلب كل مجلدات المستخدم مع أسماء الأقسام التي تنتمي إليها (إن وجدت).
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                f.folder_id, 
+                f.folder_name, 
+                s.section_name 
+            FROM 
+                folders f
+            LEFT JOIN 
+                sections s ON f.section_id = s.section_id
+            WHERE 
+                f.owner_user_id = ?
+        """, (user_id,))
+        
+        return cursor.fetchall()
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند جلب كل المجلدات: {e}")
+        return []
     finally:
         if conn:
             conn.close()
