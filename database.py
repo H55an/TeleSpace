@@ -179,8 +179,9 @@ def get_items_paginated(folder_id: int, limit: int, offset: int):
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM items WHERE folder_id = ?", (folder_id,))
         total_items = cursor.fetchone()[0]
+        # #[تعديل هنا]: نتأكد من جلب item_record_id
         cursor.execute(
-            "SELECT item_name, item_type, content, file_id FROM items WHERE folder_id = ? ORDER BY item_record_id ASC LIMIT ? OFFSET ?",
+            "SELECT item_record_id, item_name, item_type, content, file_id FROM items WHERE folder_id = ? ORDER BY item_record_id ASC LIMIT ? OFFSET ?",
             (folder_id, limit, offset)
         )
         items_page = cursor.fetchall()
@@ -191,7 +192,6 @@ def get_items_paginated(folder_id: int, limit: int, offset: int):
     finally:
         if conn:
             conn.close()
-
 
 def get_all_user_folders(user_id: int):
     """
@@ -219,6 +219,41 @@ def get_all_user_folders(user_id: int):
     except sqlite3.Error as e:
         print(f"حدث خطأ في قاعدة البيانات عند جلب كل المجلدات: {e}")
         return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_item_details(item_record_id: int):
+    """
+    تجلب تفاصيل عنصر معين باستخدام معرّفه الفريد في قاعدة البيانات.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        # نستخدم * لجلب كل الأعمدة لهذا العنصر
+        cursor.execute("SELECT * FROM items WHERE item_record_id = ?", (item_record_id,))
+        return cursor.fetchone()
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند جلب تفاصيل العنصر: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def delete_item(item_record_id: int):
+    """
+    تقوم بحذف عنصر معين من جدول items.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM items WHERE item_record_id = ?", (item_record_id,))
+        conn.commit()
+        print(f"تم حذف العنصر برقم {item_record_id} بنجاح.")
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند حذف العنصر: {e}")
     finally:
         if conn:
             conn.close()
