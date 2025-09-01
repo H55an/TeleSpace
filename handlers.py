@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 import config
 import database
-from keyboards import build_main_menu_keyboard
+from keyboards import build_main_menu_keyboard, build_section_view_keyboard 
 from constants import *
 
 # --- الدوال المساعدة ---
@@ -95,53 +95,57 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     data = query.data
-
-    # منطق عرض الأقسام (يبقى كما هو)
+    
+    # --- منطق التصفح ---
     if data.startswith("section:"):
         section_id = int(data.split(':')[1])
-        # ... (الكود هنا لم يتغير)
-        keyboard_layout = []
-        subsections = database.get_subsections(section_id)
-        if subsections: keyboard_layout.append([InlineKeyboardButton(f"📂 {s['section_name']}", callback_data=f"section:{s['section_id']}") for s in subsections])
-        folders_in_section = database.get_folders_in_section(section_id)
-        if folders_in_section: keyboard_layout.append([InlineKeyboardButton(f"📁 {f['folder_name']}", callback_data=f"folder:{f['folder_id']}") for f in folders_in_section])
-        control_buttons = [InlineKeyboardButton("➕ قسم فرعي هنا", callback_data=f"new_section_sub:{section_id}"), InlineKeyboardButton("➕ مجلد جديد هنا", callback_data=f"new_folder_in_sec:{section_id}")]
-        keyboard_layout.append(control_buttons)
-        keyboard_layout.append([InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="back_to_main")])
-        reply_markup = InlineKeyboardMarkup(keyboard_layout)
-        await query.message.edit_text("اختر قسمًا فرعيًا أو مجلدًا:", reply_markup=reply_markup)
+        keyboard = build_section_view_keyboard(section_id)
+        await query.message.edit_text("اختر عنصرًا للتصفح أو `⚙️` للتحكم:", reply_markup=keyboard)
+        
+    elif data == "back_to_main":
+        await start(update, context)
 
-    # #[تعديل هنا]: إضافة زر الحذف الشامل إلى خيارات المجلد
+    # #[تعديل 1]: عند الضغط على اسم المجلد، نعرض خيارات التصفح فقط
     elif data.startswith("folder:"):
         folder_id = int(data.split(':')[1])
         keyboard = [
             [InlineKeyboardButton("📂 عرض المحتويات", callback_data=f"view_files:{folder_id}:0")],
-            [InlineKeyboardButton("➕ إضافة عناصر هنا", callback_data=f"add_files_to:{folder_id}")],
-            # --- الزر الجديد ---
-            [InlineKeyboardButton("🗑️ حذف كل المحتويات", callback_data=f"delete_all_prompt:{folder_id}")],
-            [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="back_to_main")]
+            [InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_files_to:{folder_id}")],
+            [InlineKeyboardButton("🔙 العودة", callback_data="back_to_main")] # يمكن تحسينه لاحقًا ليعود للقسم الأب
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.edit_text(text="اختر الإجراء المطلوب للمجلد:", reply_markup=reply_markup)
+        await query.message.edit_text("اختر الإجراء:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # منطق عرض المحتويات (يبقى كما هو)
+    # --- منطق قوائم الإعدادات ---
+    elif data.startswith("settings_section:"):
+        section_id = int(data.split(':')[1])
+        keyboard = [
+            # [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"rename_section:{section_id}")],
+            [InlineKeyboardButton("🗑️ حذف القسم بالكامل", callback_data=f"delete_section_prompt:{section_id}")],
+            [InlineKeyboardButton("🔙 عودة", callback_data="back_to_main")] # يعود للقائمة الرئيسية
+        ]
+        await query.message.edit_text("خيارات التحكم بالقسم:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # #[تعديل 2]: عند الضغط على زر الإعدادات، نعرض خيارات الإدارة
+    elif data.startswith("settings_folder:"):
+        folder_id = int(data.split(':')[1])
+        keyboard = [
+            # [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"rename_folder:{folder_id}")],
+            [InlineKeyboardButton("🔥 حذف كل المحتويات فقط", callback_data=f"delete_all_prompt:{folder_id}")],
+            [InlineKeyboardButton("🗑️ حذف المجلد بالكامل", callback_data=f"delete_folder_prompt:{folder_id}")],
+            [InlineKeyboardButton("🔙 عودة", callback_data="back_to_main")] 
+        ]
+        await query.message.edit_text("خيارات التحكم بالمجلد:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # --- منطق عرض وحذف المحتويات (يبقى كما هو) ---
     elif data.startswith("view_files:"):
         _, folder_id, offset = data.split(':')
-        await query.delete_message() 
         await view_and_send_folder_contents(update, context, int(folder_id), int(offset))
-
-    elif data == "back_to_main":
-        await start(update, context)
-
-    # منطق حذف عنصر واحد (يبقى كما هو)
+    
+    # ... (بقية منطق الحذف الفردي وحذف المجلدات والأقسام يبقى كما هو تمامًا)
     elif data.startswith("delete_prompt:"):
         item_id = int(data.split(':')[1])
-        # ... (الكود هنا لم يتغير)
         text = "⚠️ هل أنت متأكد من أنك تريد حذف هذا العنصر بشكل دائم؟"
-        keyboard = [[
-            InlineKeyboardButton("✅ نعم، احذف", callback_data=f"delete_confirm:{item_id}"),
-            InlineKeyboardButton("❌ لا، تراجع", callback_data="delete_cancel")
-        ]]
+        keyboard = [[InlineKeyboardButton("✅ نعم، احذف", callback_data=f"delete_confirm:{item_id}"), InlineKeyboardButton("❌ لا، تراجع", callback_data="delete_cancel")]]
         await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
     elif data.startswith("delete_confirm:"):
         item_id = int(data.split(':')[1])
@@ -149,22 +153,49 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.message.edit_text(text="✅ تم حذف العنصر بنجاح.")
     elif data == "delete_cancel":
         await query.message.delete()
-
-    # --- #[إضافة جديدة]: منطق الحذف الشامل والتأكيد ---
-    elif data.startswith("delete_all_prompt:"):
+        
+    elif data.startswith("delete_folder_prompt:"):
         folder_id = int(data.split(':')[1])
-        text = "⚠️ **تحذير!**\nهل أنت متأكد من أنك تريد حذف **كل** محتويات هذا المجلد بشكل دائم؟"
+        text = "⚠️ **تحذير!**\nهل تريد بالتأكيد حذف هذا المجلد **وكل محتوياته** بشكل دائم؟"
         keyboard = [[
-            InlineKeyboardButton("✅ نعم، احذف كل شيء", callback_data=f"delete_all_confirm:{folder_id}"),
-            # زر التراجع يعيدك إلى قائمة خيارات المجلد
-            InlineKeyboardButton("❌ لا، تراجع", callback_data=f"folder:{folder_id}")
+            InlineKeyboardButton("✅ نعم، احذف المجلد", callback_data=f"delete_folder_confirm:{folder_id}"),
+            InlineKeyboardButton("❌ لا، تراجع", callback_data=f"settings_folder:{folder_id}")
         ]]
         await query.message.edit_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    elif data.startswith("delete_folder_confirm:"):
+        folder_id = int(data.split(':')[1])
+        database.delete_folder(folder_id)
+        await query.answer("✅ تم حذف المجلد بنجاح!")
+        await start(update, context)
 
+    elif data.startswith("delete_section_prompt:"):
+        section_id = int(data.split(':')[1])
+        text = "🔥 **تحذير خطير جدا!**\nهل تريد بالتأكيد حذف هذا القسم **وكل ما بداخله** بشكل دائم؟"
+        keyboard = [[
+            InlineKeyboardButton("🔥 نعم، متأكد تمامًا", callback_data=f"delete_section_confirm:{section_id}"),
+            InlineKeyboardButton("❌ لا، تراجع", callback_data=f"settings_section:{section_id}")
+        ]]
+        await query.message.edit_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    elif data.startswith("delete_section_confirm:"):
+        section_id = int(data.split(':')[1])
+        database.delete_section_recursively(section_id)
+        await query.answer("✅ تم حذف القسم وكل محتوياته بنجاح!")
+        await start(update, context)
+
+    # --- #[إضافة جديدة]: منطق حذف كل المحتويات ---
+    elif data.startswith("delete_all_prompt:"):
+        folder_id = int(data.split(':')[1])
+        text = "⚠️ **تحذير!**\nهل تريد بالتأكيد حذف **كل محتويات** هذا المجلد (سيبقى المجلد فارغًا)؟"
+        keyboard = [[
+            InlineKeyboardButton("✅ نعم، احذف المحتويات", callback_data=f"delete_all_confirm:{folder_id}"),
+            InlineKeyboardButton("❌ لا، تراجع", callback_data=f"settings_folder:{folder_id}")
+        ]]
+        await query.message.edit_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    
     elif data.startswith("delete_all_confirm:"):
         folder_id = int(data.split(':')[1])
         deleted_count = database.delete_all_items_in_folder(folder_id)
-        await query.message.edit_text(f"✅ تم حذف {deleted_count} عنصر بنجاح من المجلد.")
+        await query.message.edit_text(f"✅ تم حذف {deleted_count} عنصر بنجاح. المجلد الآن فارغ.")
 
 
 

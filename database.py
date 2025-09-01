@@ -276,3 +276,62 @@ def delete_all_items_in_folder(folder_id: int):
     finally:
         if conn:
             conn.close()
+
+
+def delete_folder(folder_id: int):
+    """
+    تقوم بحذف مجلد وكل العناصر الموجودة بداخله.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        
+        # الخطوة 1: حذف كل العناصر داخل المجلد
+        cursor.execute("DELETE FROM items WHERE folder_id = ?", (folder_id,))
+        print(f"تم حذف {cursor.rowcount} عنصر من المجلد {folder_id}.")
+        
+        # الخطوة 2: حذف المجلد نفسه
+        cursor.execute("DELETE FROM folders WHERE folder_id = ?", (folder_id,))
+        print(f"تم حذف المجلد {folder_id} بنجاح.")
+
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند حذف المجلد: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+
+            
+def delete_section_recursively(section_id: int):
+    """
+    تقوم بحذف قسم وكل محتوياته (أقسام فرعية، مجلدات، عناصر) بشكل متكرر.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        
+        # الخطوة 1: ابحث عن كل الأقسام الفرعية داخل هذا القسم
+        cursor.execute("SELECT section_id FROM sections WHERE parent_section_id = ?", (section_id,))
+        subsections = cursor.fetchall()
+        for sub in subsections:
+            # استدعاء الدالة لنفسها لحذف كل قسم فرعي ومحتوياته
+            delete_section_recursively(sub[0])
+            
+        # الخطوة 2: ابحث عن كل المجلدات داخل هذا القسم
+        cursor.execute("SELECT folder_id FROM folders WHERE section_id = ?", (section_id,))
+        folders = cursor.fetchall()
+        for folder in folders:
+            # استخدم دالة حذف المجلدات الموجودة لدينا
+            delete_folder(folder[0])
+
+        # الخطوة 3: بعد حذف كل المحتويات، احذف القسم نفسه
+        cursor.execute("DELETE FROM sections WHERE section_id = ?", (section_id,))
+        
+        conn.commit()
+        print(f"تم حذف القسم {section_id} وكل محتوياته بنجاح.")
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند حذف القسم بشكل متكرر: {e}")
+    finally:
+        if conn:
+            conn.close()
