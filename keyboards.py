@@ -13,16 +13,16 @@ def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     root_sections = get_root_sections(user_id)
     for section in root_sections:
         keyboard_layout.append([
-            InlineKeyboardButton(f"📂 {section['section_name']}", callback_data=f"section:{section['section_id']}"),
-            InlineKeyboardButton("⚙️", callback_data=f"settings_section:{section['section_id']}")
+            InlineKeyboardButton("⚙️", callback_data=f"settings_section:{section['section_id']}"),
+            InlineKeyboardButton(f"📂 {section['section_name']}", callback_data=f"section:{section['section_id']}")
         ])
         
     # بناء أزرار المجلدات الرئيسية
     root_folders = get_root_folders(user_id)
     for folder in root_folders:
         keyboard_layout.append([
-            InlineKeyboardButton(f"📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}"),
-            InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}")
+            InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}"),
+            InlineKeyboardButton(f"📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}")
         ])
         
     # أزرار الإنشاء
@@ -44,16 +44,16 @@ def build_section_view_keyboard(section_id: int) -> InlineKeyboardMarkup:
     subsections = get_subsections(section_id)
     for sub in subsections:
         keyboard_layout.append([
-            InlineKeyboardButton(f"📂 {sub['section_name']}", callback_data=f"section:{sub['section_id']}"),
-            InlineKeyboardButton("⚙️", callback_data=f"settings_section:{sub['section_id']}")
+            InlineKeyboardButton("⚙️", callback_data=f"settings_section:{sub['section_id']}"),
+            InlineKeyboardButton(f"📂 {sub['section_name']}", callback_data=f"section:{sub['section_id']}")
         ])
 
     # بناء أزرار المجلدات داخل القسم
     folders_in_section = get_folders_in_section(section_id)
     for folder in folders_in_section:
         keyboard_layout.append([
-            InlineKeyboardButton(f"📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}"),
-            InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}")
+            InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}"),
+            InlineKeyboardButton(f"📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}")
         ])
 
     # أزرار التحكم
