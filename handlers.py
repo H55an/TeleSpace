@@ -84,7 +84,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     database.add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
     keyboard = build_main_menu_keyboard(user.id)
-    reply_text = f"مرحبًا بك في Telespace .\n\nمساحتك الخاصة على تيليجرام لبناء مكتبتك المعرفية وتخصيصها بنفسك ، وتخزين كل ما يهمك من المحتوى (ملفات، رسائل، صور، وسائط) بطريقة منظمة ومرنة .\n\n🗂️ يمكنك إنشاء الأقسام والأقسام الفرعية .\n📂 يمكنك إنشاء المجلدات وتخزين ملفاتك فيها ."
+    reply_text = f"مرحبًا بك في TeleSpace .\n\nمساحتك الخاصة على تيليجرام لبناء بيئتك المثالية وتخصيصها بنفسك ، وتخزين كل ما يهمك من المحتوى (ملفات، رسائل، صور، وسائط) بطريقة منظمة ومرنة .\n\n🗂️ يمكنك إنشاء الأقسام والأقسام الفرعية .\n📂 يمكنك إنشاء المجلدات وتخزين ملفاتك فيها ."
     if update.message: await update.message.reply_html(reply_text, reply_markup=keyboard)
     elif update.callback_query:
         try: await update.callback_query.message.edit_text(reply_text, reply_markup=keyboard, parse_mode='HTML')
