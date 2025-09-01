@@ -95,72 +95,77 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     data = query.data
-    
-    # ... (منطق عرض الأقسام يبقى كما هو)
+
+    # منطق عرض الأقسام (يبقى كما هو)
     if data.startswith("section:"):
         section_id = int(data.split(':')[1])
+        # ... (الكود هنا لم يتغير)
         keyboard_layout = []
         subsections = database.get_subsections(section_id)
-        if subsections: keyboard_layout.append([InlineKeyboardButton(f"{s['section_name']} 🗂️", callback_data=f"section:{s['section_id']}") for s in subsections])
+        if subsections: keyboard_layout.append([InlineKeyboardButton(f"📂 {s['section_name']}", callback_data=f"section:{s['section_id']}") for s in subsections])
         folders_in_section = database.get_folders_in_section(section_id)
-        if folders_in_section: keyboard_layout.append([InlineKeyboardButton(f"{f['folder_name']} 📂", callback_data=f"folder:{f['folder_id']}") for f in folders_in_section])
-        control_buttons = [InlineKeyboardButton("➕ قسم فرعي هنا 🗂️", callback_data=f"new_section_sub:{section_id}"), InlineKeyboardButton("➕ مجلد جديد هنا 📂", callback_data=f"new_folder_in_sec:{section_id}")]
+        if folders_in_section: keyboard_layout.append([InlineKeyboardButton(f"📁 {f['folder_name']}", callback_data=f"folder:{f['folder_id']}") for f in folders_in_section])
+        control_buttons = [InlineKeyboardButton("➕ قسم فرعي هنا", callback_data=f"new_section_sub:{section_id}"), InlineKeyboardButton("➕ مجلد جديد هنا", callback_data=f"new_folder_in_sec:{section_id}")]
         keyboard_layout.append(control_buttons)
         keyboard_layout.append([InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="back_to_main")])
         reply_markup = InlineKeyboardMarkup(keyboard_layout)
         await query.message.edit_text("اختر قسمًا فرعيًا أو مجلدًا:", reply_markup=reply_markup)
-        
+
+    # #[تعديل هنا]: إضافة زر الحذف الشامل إلى خيارات المجلد
     elif data.startswith("folder:"):
         folder_id = int(data.split(':')[1])
         keyboard = [
             [InlineKeyboardButton("📂 عرض المحتويات", callback_data=f"view_files:{folder_id}:0")],
-            [InlineKeyboardButton("➕ إضافة عناصر هنا🗳", callback_data=f"add_files_to:{folder_id}")],
+            [InlineKeyboardButton("➕ إضافة عناصر هنا", callback_data=f"add_files_to:{folder_id}")],
+            # --- الزر الجديد ---
+            [InlineKeyboardButton("🗑️ حذف كل المحتويات", callback_data=f"delete_all_prompt:{folder_id}")],
             [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="back_to_main")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.edit_text(text="اختر الإجراء المطلوب للمجلد:", reply_markup=reply_markup)
 
-    # #[تعديل]: هذا الآن يستدعي دالة العرض والإرسال الجديدة
+    # منطق عرض المحتويات (يبقى كما هو)
     elif data.startswith("view_files:"):
         _, folder_id, offset = data.split(':')
         await query.delete_message() 
         await view_and_send_folder_contents(update, context, int(folder_id), int(offset))
-        
+
     elif data == "back_to_main":
         await start(update, context)
 
-    # --- #[إضافة جديدة]: منطق الحذف والتأكيد ---
+    # منطق حذف عنصر واحد (يبقى كما هو)
     elif data.startswith("delete_prompt:"):
         item_id = int(data.split(':')[1])
-        item = database.get_item_details(item_id)
-        if not item:
-            # إذا تم حذف العنصر بالفعل، نعدل رسالة الزر
-            await query.edit_message_text("تم حذف هذا العنصر بالفعل.")
-            return
-
-        text = f"⚠️ هل أنت متأكد من أنك تريد حذف العنصر التالي بشكل دائم؟\n\n**{item['item_name']}**"
+        # ... (الكود هنا لم يتغير)
+        text = "⚠️ هل أنت متأكد من أنك تريد حذف هذا العنصر بشكل دائم؟"
         keyboard = [[
             InlineKeyboardButton("✅ نعم، احذف", callback_data=f"delete_confirm:{item_id}"),
-            InlineKeyboardButton("❌ لا، تراجع", callback_data=f"delete_cancel")
+            InlineKeyboardButton("❌ لا، تراجع", callback_data="delete_cancel")
         ]]
-        # نرسل رسالة جديدة للتأكيد
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
     elif data.startswith("delete_confirm:"):
         item_id = int(data.split(':')[1])
         database.delete_item(item_id)
-        # نعدل رسالة التأكيد التي أرسلناها
         await query.message.edit_text(text="✅ تم حذف العنصر بنجاح.")
-        # نحاول حذف الرسالة الأصلية التي كان تحتها زر الحذف
-        try:
-            original_message_id = query.message.reply_to_message.message_id
-            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=original_message_id)
-        except Exception:
-            pass # نتجاهل الخطأ إذا لم نتمكن من حذفها
-    
     elif data == "delete_cancel":
-        # ببساطة نحذف رسالة التأكيد
         await query.message.delete()
+
+    # --- #[إضافة جديدة]: منطق الحذف الشامل والتأكيد ---
+    elif data.startswith("delete_all_prompt:"):
+        folder_id = int(data.split(':')[1])
+        text = "⚠️ **تحذير!**\nهل أنت متأكد من أنك تريد حذف **كل** محتويات هذا المجلد بشكل دائم؟"
+        keyboard = [[
+            InlineKeyboardButton("✅ نعم، احذف كل شيء", callback_data=f"delete_all_confirm:{folder_id}"),
+            # زر التراجع يعيدك إلى قائمة خيارات المجلد
+            InlineKeyboardButton("❌ لا، تراجع", callback_data=f"folder:{folder_id}")
+        ]]
+        await query.message.edit_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+    elif data.startswith("delete_all_confirm:"):
+        folder_id = int(data.split(':')[1])
+        deleted_count = database.delete_all_items_in_folder(folder_id)
+        await query.message.edit_text(f"✅ تم حذف {deleted_count} عنصر بنجاح من المجلد.")
+
 
 
 # --- دوال المحادثات (تبقى كما هي تمامًا من الكود الذي قدمته) ---

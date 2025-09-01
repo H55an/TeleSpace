@@ -257,3 +257,22 @@ def delete_item(item_record_id: int):
     finally:
         if conn:
             conn.close()
+
+
+def delete_all_items_in_folder(folder_id: int):
+    """
+    تقوم بحذف كل العناصر الموجودة داخل مجلد معين.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM items WHERE folder_id = ?", (folder_id,))
+        conn.commit()
+        # نرجع عدد الصفوف التي تم حذفها
+        return cursor.rowcount
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند حذف كل العناصر: {e}")
+        return 0
+    finally:
+        if conn:
+            conn.close()
