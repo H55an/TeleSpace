@@ -97,7 +97,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     database.add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
     keyboard = build_main_menu_keyboard(user.id)
-    reply_text = "🗂️ **الواجهة الرئيسية**\n\nاختر قسمًا أو مجلدًا للتصفح."
+    reply_text = f"مرحبًا بك في Telespace .\n\nمساحتك الخاصة على تيليجرام لبناء مكتبتك المعرفية وتخصيصها بنفسك ، وتخزين كل ما يهمك من المحتوى (ملفات، رسائل، صور، وسائط) بطريقة منظمة ومرنة .\n\n🗂️ يمكنك إنشاء الأقسام والأقسام الفرعية .\n📂 يمكنك إنشاء المجلدات وتخزين ملفاتك فيها ."
     if update.message:
         await update.message.reply_html(reply_text, reply_markup=keyboard)
     elif update.callback_query:
@@ -117,13 +117,13 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         keyboard_layout = []
         subsections = database.get_subsections(section_id)
         if subsections:
-            keyboard_layout.append([InlineKeyboardButton(f"📂 {s['section_name']}", callback_data=f"section:{s['section_id']}") for s in subsections])
+            keyboard_layout.append([InlineKeyboardButton(f"{s['section_name']} 🗂️", callback_data=f"section:{s['section_id']}") for s in subsections])
         folders_in_section = database.get_folders_in_section(section_id)
         if folders_in_section:
-            keyboard_layout.append([InlineKeyboardButton(f"📁 {f['folder_name']}", callback_data=f"folder:{f['folder_id']}") for f in folders_in_section])
+            keyboard_layout.append([InlineKeyboardButton(f"{f['folder_name']} 📂", callback_data=f"folder:{f['folder_id']}") for f in folders_in_section])
         control_buttons = [
-            InlineKeyboardButton("➕ قسم فرعي هنا", callback_data=f"new_section_sub:{section_id}"),
-            InlineKeyboardButton("➕ مجلد جديد هنا", callback_data=f"new_folder_in_sec:{section_id}")
+            InlineKeyboardButton("➕ قسم فرعي هنا 🗂️", callback_data=f"new_section_sub:{section_id}"),
+            InlineKeyboardButton("➕ مجلد جديد هنا 📂", callback_data=f"new_folder_in_sec:{section_id}")
         ]
         keyboard_layout.append(control_buttons)
         keyboard_layout.append([InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="back_to_main")])
@@ -133,7 +133,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         folder_id = int(data.split(':')[1])
         keyboard = [
             [InlineKeyboardButton("📂 عرض المحتويات", callback_data=f"view_files:{folder_id}:0")],
-            [InlineKeyboardButton("➕ إضافة عناصر هنا", callback_data=f"add_files_to:{folder_id}")],
+            [InlineKeyboardButton("➕ إضافة عناصر هنا🗳", callback_data=f"add_files_to:{folder_id}")],
             [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="back_to_main")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
