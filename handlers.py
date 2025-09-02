@@ -7,13 +7,16 @@ from telegram.helpers import escape_markdown
 
 import config
 import database
-from keyboards import build_main_menu_keyboard, build_section_view_keyboard 
+from keyboards import build_main_menu_keyboard, build_section_view_keyboard
 from constants import *
-from database import get_folder_details, rename_folder, get_section_details, rename_section
+from database import (
+    get_folder_details, rename_folder, get_section_details, rename_section,
+    create_share_link, get_share_by_token, deactivate_share_link, grant_permission,
+    get_permission_level # <-- [جديد] استيراد الدالة
+)
 
 # --- الدوال المساعدة ---
 async def process_message_for_saving(message: Message) -> dict | None:
-    # ... (هذه الدالة تبقى كما هي من الكود الذي قدمته)
     file_type, file_obj = None, None
     if message.document: (file_type, file_obj) = ('document', message.document)
     elif message.video: (file_type, file_obj) = ('video', message.video)
@@ -27,12 +30,14 @@ async def process_message_for_saving(message: Message) -> dict | None:
         return {'item_name': f"رسالة: {message.text[:20]}...", 'item_type': 'text', 'content': message.text, 'file_unique_id': None, 'file_id': None}
     return None
 
-# --- #[تعديل جوهري]: دالة العرض والإرسال الجديدة ---
 async def view_and_send_folder_contents(update: Update, context: ContextTypes.DEFAULT_TYPE, folder_id: int, offset: int = 0):
-    """
-    تجلب وترسل دفعة من العناصر مباشرة، مع زر حذف تحت كل عنصر.
-    """
     chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+
+    # --- [تعديل] التحقق من الصلاحيات قبل إظهار زر الحذف ---
+    permission = get_permission_level(user_id, 'folder', folder_id)
+    can_delete = permission in ['owner', 'admin']
+
     items_page, total_items = database.get_items_paginated(folder_id, limit=PAGE_SIZE, offset=offset)
     
     if not items_page and offset == 0:
@@ -47,31 +52,26 @@ async def view_and_send_folder_contents(update: Update, context: ContextTypes.DE
     
     for item in items_page:
         try:
-            # 1. بناء زر الحذف الخاص بهذا العنصر
-            keyboard = [[ 
-                InlineKeyboardButton("🗑️ حذف هذا العنصر", callback_data=f"delete_prompt:{item['item_record_id']}")
-            ]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            reply_markup = None
+            if can_delete:
+                keyboard = [[InlineKeyboardButton("🗑️ حذف هذا العنصر", callback_data=f"delete_prompt:{item['item_record_id']}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # 2. إرسال العنصر بالطريقة الصحيحة مع إرفاق زر الحذف
             item_type = item['item_type']
             content = item['content']
             file_id = item['file_id']
             
-            sent_message = None
             if item_type == 'text':
-                sent_message = await context.bot.send_message(chat_id=chat_id, text=content, reply_markup=reply_markup)
-            else:
-                if item_type == 'document': sent_message = await context.bot.send_document(chat_id=chat_id, document=file_id, caption=content, reply_markup=reply_markup)
-                elif item_type == 'video': sent_message = await context.bot.send_video(chat_id=chat_id, video=file_id, caption=content, reply_markup=reply_markup)
-                elif item_type == 'photo': sent_message = await context.bot.send_photo(chat_id=chat_id, photo=file_id, caption=content, reply_markup=reply_markup)
-                elif item_type == 'audio': sent_message = await context.bot.send_audio(chat_id=chat_id, audio=file_id, caption=content, reply_markup=reply_markup)
+                await context.bot.send_message(chat_id=chat_id, text=content, reply_markup=reply_markup)
+            elif item_type == 'document': await context.bot.send_document(chat_id=chat_id, document=file_id, caption=content, reply_markup=reply_markup)
+            elif item_type == 'video': await context.bot.send_video(chat_id=chat_id, video=file_id, caption=content, reply_markup=reply_markup)
+            elif item_type == 'photo': await context.bot.send_photo(chat_id=chat_id, photo=file_id, caption=content, reply_markup=reply_markup)
+            elif item_type == 'audio': await context.bot.send_audio(chat_id=chat_id, audio=file_id, caption=content, reply_markup=reply_markup)
             
-            await asyncio.sleep(0.5) # تأخير بسيط
+            await asyncio.sleep(0.5)
         except Exception as e:
             await context.bot.send_message(chat_id, f"لم يتم إرسال العنصر '{item['item_name']}'. الخطأ: {e}")
             
-    # 3. بعد إرسال الدفعة، تحقق إذا كان هناك المزيد
     new_offset = offset + len(items_page)
     if new_offset < total_items:
         next_keyboard = [[InlineKeyboardButton(f"📥 عرض الـ {min(PAGE_SIZE, total_items - new_offset)} عناصر التالية", callback_data=f"view_files:{folder_id}:{new_offset}")]]
@@ -79,11 +79,39 @@ async def view_and_send_folder_contents(update: Update, context: ContextTypes.DE
     else:
         await context.bot.send_message(chat_id, "تم عرض كل العناصر في هذا المجلد.")
 
-
 # --- دوال الواجهة الرئيسية والتصفح ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     database.add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
+
+    if context.args:
+        token = context.args[0]
+        share = database.get_share_by_token(token)
+        
+        if share and not share['is_used']:
+            content_type = share['content_type']
+            content_id = share['content_id']
+            permission_level = share['link_type']
+
+            database.grant_permission(user.id, content_type, content_id, permission_level)
+
+            if permission_level == 'admin':
+                database.deactivate_share_link(token)
+
+            item_name = ""
+            if content_type == 'section':
+                item_details = database.get_section_details(content_id)
+                item_name = item_details['section_name'] if item_details else ''
+            elif content_type == 'folder':
+                item_details = database.get_folder_details(content_id)
+                item_name = item_details['folder_name'] if item_details else ''
+
+            await update.message.reply_text(
+                f"أهلاً بك! لقد تم منحك صلاحيات '{permission_level}' على {content_type} \"{item_name}\" بنجاح."
+            )
+        else:
+            await update.message.reply_text("عذرًا، هذا الرابط غير صالح أو تم استخدامه بالفعل.")
+
     keyboard = build_main_menu_keyboard(user.id)
     reply_text = """مرحبًا بك في TeleSpace .
 
@@ -91,25 +119,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 🗂️ يمكنك إنشاء الأقسام والأقسام الفرعية .
 📂 يمكنك إنشاء المجلدات وتخزين ملفاتك فيها ."""
-    if update.message: 
-        await update.message.reply_html(reply_text, reply_markup=keyboard)
-    elif update.callback_query:
+    
+    if update.callback_query:
         try: 
             await update.callback_query.message.edit_text(reply_text, reply_markup=keyboard, parse_mode='HTML')
-        except Exception: 
-            # قد تفشل إذا كان النص لم يتغير، وهذا طبيعي
-            pass
+        except Exception: pass
+    else:
+        await update.message.reply_html(reply_text, reply_markup=keyboard)
+        
     return ConversationHandler.END
 
 async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
+    user_id = query.from_user.id
     await query.answer()
     data = query.data
     
-    # --- منطق التصفح ---
     if data.startswith("section:"):
         section_id = int(data.split(':')[1])
-        keyboard = build_section_view_keyboard(section_id)
+        
+        # [جديد] التحقق من الصلاحية قبل عرض محتويات القسم
+        permission = database.get_permission_level(user_id, 'section', section_id)
+        if permission is None:
+            await query.answer("ليس لديك صلاحية للوصول إلى هذا القسم.", show_alert=True)
+            return
+
+        keyboard = build_section_view_keyboard(section_id, user_id)
         await query.message.edit_text("اختر عنصرًا للتصفح أو `⚙️` للتحكم:", reply_markup=keyboard)
         
     elif data == "back_to_main":
@@ -117,42 +152,95 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif data.startswith("folder:"):
         folder_id = int(data.split(':')[1])
+
+        # [جديد] التحقق من الصلاحية قبل عرض خيارات المجلد
+        permission = database.get_permission_level(user_id, 'folder', folder_id)
+        if permission is None:
+            await query.answer("ليس لديك صلاحية للوصول إلى هذا المجلد.", show_alert=True)
+            return
+
         folder_details = database.get_folder_details(folder_id)
         section_id = folder_details['section_id'] if folder_details else None
+        
+        # --- [تعديل] التحقق من الصلاحيات قبل عرض زر الإضافة ---
+        # هذا الجزء موجود بالفعل ويستخدم 'permission' الذي تم جلبه للتو
+        
+        keyboard_layout = [
+            [InlineKeyboardButton("📂 عرض المحتويات", callback_data=f"view_files:{folder_id}:0")]
+        ]
+        
+        if permission in ['owner', 'admin']:
+            keyboard_layout.append([InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_files_to:{folder_id}")])
 
-        if section_id:
-            back_button_data = f"section:{section_id}"
-        else:
-            back_button_data = "back_to_main"
+        back_button_data = f"section:{section_id}" if section_id else "back_to_main"
+        keyboard_layout.append([InlineKeyboardButton(f"🔙 عودة", callback_data=back_button_data)])
+        
+        await query.message.edit_text("اختر الإجراء:", reply_markup=InlineKeyboardMarkup(keyboard_layout))
+
+    elif data.startswith("share_menu_"):
+        parts = data.split(':')
+        content_type = parts[0].split('_')[2]
+        content_id = int(parts[1])
+        
+        # تحديد زر العودة المناسب
+        if content_type == 'section':
+             back_button_data = f"section:{content_id}"
+        else: # folder
+            folder_details = database.get_folder_details(content_id)
+            parent_section_id = folder_details['section_id'] if folder_details else None
+            back_button_data = f"section:{parent_section_id}" if parent_section_id else "back_to_main"
 
         keyboard = [
-            [InlineKeyboardButton("📂 عرض المحتويات", callback_data=f"view_files:{folder_id}:0")],
-            [InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_files_to:{folder_id}")],
-            [InlineKeyboardButton(f"🔙 عودة", callback_data=back_button_data)]
+            [InlineKeyboardButton("🤝 مشاركة (مشاهدة)", callback_data=f"generate_viewer_link:{content_type}:{content_id}")],
+            [InlineKeyboardButton("👑 إضافة مشرف", callback_data=f"generate_admin_link:{content_type}:{content_id}")],
+            [InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)]
         ]
-        await query.message.edit_text("اختر الإجراء:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.message.edit_text("اختر نوع رابط المشاركة:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # --- منطق قوائم الإعدادات ---
+
+    elif data.startswith("generate_viewer_link:") or data.startswith("generate_admin_link:"):
+        parts = data.split(':')
+        link_type = 'viewer' if parts[0].startswith('generate_viewer') else 'admin'
+        content_type = parts[1]
+        content_id = int(parts[2])
+        token = database.create_share_link(user_id, content_type, content_id, link_type)
+        bot_username = (await context.bot.get_me()).username
+        share_link = f"https://t.me/{bot_username}?start={token}"
+
+        # [تصحيح] استخدام escape_markdown لتجنب الأخطاء
+        text_to_escape = f"الرابط جاهز للمشاركة ({link_type}):"
+        escaped_text = escape_markdown(text_to_escape, version=2)
+
+        # نضع الرابط داخل `code` لذا لا نحتاج لعمل escape له
+        text = f"{escaped_text}\n`{share_link}`"
+
+        await query.message.edit_text(text, parse_mode='MarkdownV2')
+
     elif data.startswith("settings_section:"):
         section_id = int(data.split(':')[1])
+        section_details = get_section_details(section_id)
+        parent_id = section_details['parent_section_id'] if section_details else None
+        back_button_data = f"section:{parent_id}" if parent_id else "back_to_main"
         keyboard = [
             [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"rename_section_prompt:{section_id}")],
             [InlineKeyboardButton("🗑️ حذف القسم بالكامل", callback_data=f"delete_section_prompt:{section_id}")],
-            [InlineKeyboardButton("🔙 عودة", callback_data="back_to_main")]
+            [InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)]
         ]
         await query.message.edit_text("خيارات التحكم بالقسم:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("settings_folder:"):
         folder_id = int(data.split(':')[1])
+        folder_details = get_folder_details(folder_id)
+        section_id = folder_details['section_id'] if folder_details else None
+        back_button_data = f"folder:{folder_id}"
         keyboard = [
             [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"rename_folder_prompt:{folder_id}")],
             [InlineKeyboardButton("🔥 حذف كل المحتويات فقط", callback_data=f"delete_all_prompt:{folder_id}")],
             [InlineKeyboardButton("🗑️ حذف المجلد بالكامل", callback_data=f"delete_folder_prompt:{folder_id}")],
-            [InlineKeyboardButton("🔙 عودة", callback_data="back_to_main")] 
+            [InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)] 
         ]
         await query.message.edit_text("خيارات التحكم بالمجلد:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # --- منطق عرض وحذف المحتويات ---
     elif data.startswith("view_files:"):
         _, folder_id, offset = data.split(':')
         await view_and_send_folder_contents(update, context, int(folder_id), int(offset))
@@ -173,8 +261,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         
     elif data.startswith("delete_folder_prompt:"):
         folder_id = int(data.split(':')[1])
-        text = """⚠️ <b>تحذير!</b>
-هل تريد بالتأكيد حذف هذا المجلد <b>وكل محتوياته</b> بشكل دائم؟"""
+        text = "⚠️ <b>تحذير!</b>\nهل تريد بالتأكيد حذف هذا المجلد <b>وكل محتوياته</b> بشكل دائم؟"
         keyboard = [[ 
             InlineKeyboardButton("✅ نعم، احذف المجلد", callback_data=f"delete_folder_confirm:{folder_id}"),
             InlineKeyboardButton("❌ لا، تراجع", callback_data=f"settings_folder:{folder_id}")
@@ -189,8 +276,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif data.startswith("delete_section_prompt:"):
         section_id = int(data.split(':')[1])
-        text = """🔥 <b>تحذير خطير جدا!</b>
-هل تريد بالتأكيد حذف هذا القسم <b>وكل ما بداخله</b> بشكل دائم؟"""
+        text = "🔥 <b>تحذير خطير جدا!</b>\nهل تريد بالتأكيد حذف هذا القسم <b>وكل ما بداخله</b> بشكل دائم؟"
         keyboard = [[ 
             InlineKeyboardButton("🔥 نعم، متأكد تمامًا", callback_data=f"delete_section_confirm:{section_id}"),
             InlineKeyboardButton("❌ لا، تراجع", callback_data=f"settings_section:{section_id}")
@@ -205,8 +291,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif data.startswith("delete_all_prompt:"):
         folder_id = int(data.split(':')[1])
-        text = """⚠️ <b>تحذير!</b>
-هل تريد بالتأكيد حذف <b>كل محتويات</b> هذا المجلد (سيبقى المجلد فارغًا)؟"""
+        text = "⚠️ <b>تحذير!</b>\nهل تريد بالتأكيد حذف <b>كل محتويات</b> هذا المجلد (سيبقى المجلد فارغًا)؟"
         keyboard = [[ 
             InlineKeyboardButton("✅ نعم، احذف المحتويات", callback_data=f"delete_all_confirm:{folder_id}"),
             InlineKeyboardButton("❌ لا، تراجع", callback_data=f"settings_folder:{folder_id}")

@@ -77,14 +77,29 @@ def setup_database():
 )
 """)
 
-    # --- جدول المجلدات المشتركة ---
+    # --- جدول لرموز المشاركة ---
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS shared_folders (
+    CREATE TABLE IF NOT EXISTS shares (
         share_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        folder_id INTEGER NOT NULL,
-        shared_with_user_id INTEGER NOT NULL,
-        FOREIGN KEY (folder_id) REFERENCES folders (folder_id),
-        FOREIGN KEY (shared_with_user_id) REFERENCES users (user_id)
+        share_token TEXT NOT NULL UNIQUE,
+        content_type TEXT NOT NULL, -- 'section' or 'folder'
+        content_id INTEGER NOT NULL,
+        owner_user_id INTEGER NOT NULL,
+        link_type TEXT NOT NULL, -- 'viewer' or 'admin'
+        is_used BOOLEAN NOT NULL DEFAULT 0,
+        FOREIGN KEY (owner_user_id) REFERENCES users (user_id)
+    )
+    """)
+
+    # --- جدول الصلاحيات ---
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS permissions (
+        permission_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        content_type TEXT NOT NULL,
+        content_id INTEGER NOT NULL,
+        permission_level TEXT NOT NULL, -- 'viewer' or 'admin'
+        FOREIGN KEY (user_id) REFERENCES users (user_id)
     )
     """)
 

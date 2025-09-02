@@ -1,34 +1,26 @@
 # database.py
 
 import sqlite3
+import uuid
 from config import DB_NAME
 
-# --- دوال المستخدمين (تبقى كما هي) ---
+# --- دوال المستخدمين ---
 def add_user_if_not_exists(user_id: int, first_name: str):
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
-        existing_user = cursor.fetchone()
-        if not existing_user:
+        if not cursor.fetchone():
             cursor.execute("INSERT INTO users (user_id, first_name) VALUES (?, ?)", (user_id, first_name))
             conn.commit()
-            print(f"تمت إضافة مستخدم جديد: {first_name} ({user_id})")
-        else:
-            print(f"المستخدم {first_name} ({user_id}) موجود بالفعل.")
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات: {e}")
+        print(f"DB Error in add_user_if_not_exists: {e}")
     finally:
         if conn:
             conn.close()
 
-# --- دوال الأقسام (تعديلات جوهرية هنا) ---
-
-# #[تعديل]: أصبحت الدالة الآن تقبل parent_section_id اختياري
+# --- دوال الأقسام ---
 def add_section(user_id: int, section_name: str, parent_section_id: int = None):
-    """
-    تضيف قسمًا جديدًا. إذا تم توفير parent_section_id، يتم إنشاؤه كقسم فرعي.
-    """
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
@@ -37,96 +29,87 @@ def add_section(user_id: int, section_name: str, parent_section_id: int = None):
             (user_id, section_name, parent_section_id)
         )
         conn.commit()
-        if parent_section_id:
-            print(f"تمت إضافة قسم فرعي '{section_name}' للمستخدم {user_id}.")
-        else:
-            print(f"تمت إضافة قسم رئيسي '{section_name}' للمستخدم {user_id}.")
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند إضافة قسم: {e}")
+        print(f"DB Error in add_section: {e}")
     finally:
         if conn:
             conn.close()
 
-# #[إضافة جديدة]: دالة لجلب الأقسام الرئيسية فقط
 def get_root_sections(user_id: int):
-    """
-    تجلب الأقسام الرئيسية فقط (التي ليس لها أب) لمستخدم معين.
-    """
+    """[تعديل]: تجلب الأقسام الرئيسية التي يملكها المستخدم أو لديه صلاحية عليها."""
     try:
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        # الشرط parent_section_id IS NULL هو ما يحدد أنها أقسام رئيسية
-        cursor.execute(
-            "SELECT section_id, section_name FROM sections WHERE user_id = ? AND parent_section_id IS NULL",
-            (user_id,)
-        )
+        query = """
+            SELECT s.section_id, s.section_name, s.user_id as owner_user_id
+            FROM sections s
+            LEFT JOIN permissions p ON s.section_id = p.content_id AND p.content_type = 'section'
+            WHERE (s.user_id = :user_id OR p.user_id = :user_id) AND s.parent_section_id IS NULL
+            GROUP BY s.section_id
+        """
+        cursor.execute(query, {'user_id': user_id})
         return cursor.fetchall()
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند جلب الأقسام الرئيسية: {e}")
+        print(f"DB Error in get_root_sections: {e}")
         return []
     finally:
         if conn:
             conn.close()
 
-# #[إضافة جديدة]: دالة لجلب الأقسام الفرعية
 def get_subsections(parent_section_id: int):
-    """
-    تجلب كل الأقسام الفرعية التابعة مباشرة لقسم أب معين.
-    """
+    """[تعديل]: تجلب كل الأقسام الفرعية لقسم معين، بغض النظر عن الصلاحيات."""
     try:
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT section_id, section_name FROM sections WHERE parent_section_id = ?",
-            (parent_section_id,)
-        )
+        query = """
+            SELECT section_id, section_name, user_id as owner_user_id
+            FROM sections
+            WHERE parent_section_id = ?
+        """
+        cursor.execute(query, (parent_section_id,))
         return cursor.fetchall()
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند جلب الأقسام الفرعية: {e}")
+        print(f"DB Error in get_subsections: {e}")
         return []
     finally:
         if conn:
             conn.close()
-
 # --- دوال المجلدات (تعديل بسيط ودالة جديدة) ---
 
 def add_folder(owner_user_id: int, folder_name: str, section_id: int = None):
-    # ... (هذه الدالة تبقى كما هي تمامًا) ...
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO folders (owner_user_id, folder_name, section_id) VALUES (?, ?, ?)",
                        (owner_user_id, folder_name, section_id))
         conn.commit()
-        if section_id:
-            print(f"تمت إضافة مجلد '{folder_name}' للمستخدم {owner_user_id} داخل القسم {section_id}.")
-        else:
-            print(f"تمت إضافة مجلد رئيسي '{folder_name}' للمستخدم {owner_user_id}.")
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند إضافة مجلد: {e}")
+        print(f"DB Error in add_folder: {e}")
     finally:
         if conn:
             conn.close()
 
 
+
 def get_root_folders(user_id: int):
-    """
-    تجلب كل المجلدات الرئيسية (التي لا تنتمي لقسم) الخاصة بمستخدم معين.
-    """
-    # #[تعديل بسيط]: تم تغيير اسم الدالة من get_user_root_folders إلى get_root_folders للاتساق
+    """[تعديل]: تجلب المجلدات الرئيسية التي يملكها المستخدم أو لديه صلاحية عليها."""
     try:
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT folder_id, folder_name FROM folders WHERE owner_user_id = ? AND section_id IS NULL",
-            (user_id,)
-        )
+        query = """
+            SELECT f.folder_id, f.folder_name, f.owner_user_id
+            FROM folders f
+            LEFT JOIN permissions p ON f.folder_id = p.content_id AND p.content_type = 'folder'
+            WHERE (f.owner_user_id = :user_id OR p.user_id = :user_id) AND f.section_id IS NULL
+            GROUP BY f.folder_id
+        """
+        cursor.execute(query, {'user_id': user_id})
         return cursor.fetchall()
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند جلب المجلدات الرئيسية: {e}")
+        print(f"DB Error in get_root_folders: {e}")
         return []
     finally:
         if conn:
@@ -134,20 +117,20 @@ def get_root_folders(user_id: int):
             
 # #[إضافة جديدة]: دالة لجلب المجلدات داخل قسم
 def get_folders_in_section(section_id: int):
-    """
-    تجلب كل المجلدات الموجودة داخل قسم معين.
-    """
+    """[تعديل]: تجلب كل المجلدات داخل قسم معين، بغض النظر عن الصلاحيات."""
     try:
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT folder_id, folder_name FROM folders WHERE section_id = ?",
-            (section_id,)
-        )
+        query = """
+            SELECT folder_id, folder_name, owner_user_id
+            FROM folders
+            WHERE section_id = ?
+        """
+        cursor.execute(query, (section_id,))
         return cursor.fetchall()
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند جلب المجلدات داخل قسم: {e}")
+        print(f"DB Error in get_folders_in_section: {e}")
         return []
     finally:
         if conn:
@@ -337,9 +320,6 @@ def delete_section_recursively(section_id: int):
             conn.close()
 
 def get_folder_details(folder_id: int):
-    """
-    تجلب تفاصيل مجلد معين باستخدام folder_id.
-    """
     try:
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
@@ -347,32 +327,25 @@ def get_folder_details(folder_id: int):
         cursor.execute("SELECT * FROM folders WHERE folder_id = ?", (folder_id,))
         return cursor.fetchone()
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند جلب تفاصيل المجلد: {e}")
+        print(f"DB Error in get_folder_details: {e}")
         return None
     finally:
         if conn:
             conn.close()
 
 def rename_folder(folder_id: int, new_name: str):
-    """
-    تقوم بتحديث اسم مجلد معين.
-    """
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute("UPDATE folders SET folder_name = ? WHERE folder_id = ?", (new_name, folder_id))
         conn.commit()
-        print(f"تم تغيير اسم المجلد {folder_id} إلى '{new_name}'.")
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند إعادة تسمية المجلد: {e}")
+        print(f"DB Error in rename_folder: {e}")
     finally:
         if conn:
             conn.close()
 
 def get_section_details(section_id: int):
-    """
-    تجلب تفاصيل قسم معين باستخدام section_id.
-    """
     try:
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
@@ -380,24 +353,151 @@ def get_section_details(section_id: int):
         cursor.execute("SELECT * FROM sections WHERE section_id = ?", (section_id,))
         return cursor.fetchone()
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند جلب تفاصيل القسم: {e}")
+        print(f"DB Error in get_section_details: {e}")
         return None
     finally:
         if conn:
             conn.close()
 
 def rename_section(section_id: int, new_name: str):
-    """
-    تقوم بتحديث اسم قسم معين.
-    """
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute("UPDATE sections SET section_name = ? WHERE section_id = ?", (new_name, section_id))
         conn.commit()
-        print(f"تم تغيير اسم القسم {section_id} إلى '{new_name}'.")
     except sqlite3.Error as e:
-        print(f"حدث خطأ في قاعدة البيانات عند إعادة تسمية القسم: {e}")
+        print(f"DB Error in rename_section: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+
+# --- دوال المشاركة والصلاحيات ---
+def create_share_link(owner_user_id: int, content_type: str, content_id: int, link_type: str) -> str:
+    """تنشئ رابط مشاركة فريد وتخزنه."""
+    token = str(uuid.uuid4())
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO shares (share_token, content_type, content_id, owner_user_id, link_type) VALUES (?, ?, ?, ?, ?)",
+            (token, content_type, content_id, owner_user_id, link_type)
+        )
+        conn.commit()
+        return token
+    except sqlite3.Error as e:
+        print(f"DB Error in create_share_link: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_share_by_token(token: str):
+    """تجلب تفاصيل المشاركة عبر الرمز."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM shares WHERE share_token = ?", (token,))
+        return cursor.fetchone()
+    except sqlite3.Error as e:
+        print(f"DB Error in get_share_by_token: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def deactivate_share_link(token: str):
+    """تعطل رابط مشاركة (خاص بالمدراء) بعد استخدامه."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE shares SET is_used = 1 WHERE share_token = ?", (token,))
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"DB Error in deactivate_share_link: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def grant_permission(user_id: int, content_type: str, content_id: int, permission_level: str):
+    """تمنح صلاحية لمستخدم على عنصر معين."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        # التأكد من عدم وجود الصلاحية مسبقًا لتجنب التكرار
+        cursor.execute("SELECT permission_id FROM permissions WHERE user_id = ? AND content_type = ? AND content_id = ?", (user_id, content_type, content_id))
+        if not cursor.fetchone():
+            cursor.execute(
+                "INSERT INTO permissions (user_id, content_type, content_id, permission_level) VALUES (?, ?, ?, ?)",
+                (user_id, content_type, content_id, permission_level)
+            )
+            conn.commit()
+    except sqlite3.Error as e:
+        print(f"DB Error in grant_permission: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def get_permission_level(user_id: int, content_type: str, content_id: int) -> str | None:
+    """
+    [جديد] يتحقق من مستوى صلاحية المستخدم على عنصر معين بشكل هرمي.
+    يعيد 'owner', 'admin', 'viewer', أو None.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # 1. التحقق من الملكية أولاً
+        owner_id_col = None
+        if content_type == 'section':
+            cursor.execute("SELECT user_id FROM sections WHERE section_id = ?", (content_id,))
+            owner_id_col = 'user_id'
+        elif content_type == 'folder':
+            cursor.execute("SELECT owner_user_id FROM folders WHERE folder_id = ?", (content_id,))
+            owner_id_col = 'owner_user_id'
+        else:
+            return None
+
+        owner_result = cursor.fetchone()
+        if owner_result and owner_result[owner_id_col] == user_id:
+            return 'owner'
+
+        # 2. البحث عن الصلاحيات بشكل هرمي (من العنصر الحالي صعودًا إلى الأصل)
+        current_type = content_type
+        current_id = content_id
+
+        while current_id is not None:
+            # البحث عن صلاحية مباشرة على العنصر الحالي
+            cursor.execute("""
+                SELECT permission_level FROM permissions
+                WHERE user_id = ? AND content_type = ? AND content_id = ?
+            """, (user_id, current_type, current_id))
+            permission_result = cursor.fetchone()
+
+            if permission_result:
+                return permission_result['permission_level']
+
+            # إذا لم توجد صلاحية مباشرة، انتقل إلى العنصر الأب
+            if current_type == 'section':
+                cursor.execute("SELECT parent_section_id FROM sections WHERE section_id = ?", (current_id,))
+                parent_result = cursor.fetchone()
+                current_id = parent_result['parent_section_id'] if parent_result else None
+            elif current_type == 'folder':
+                cursor.execute("SELECT section_id FROM folders WHERE folder_id = ?", (current_id,))
+                parent_result = cursor.fetchone()
+                current_id = parent_result['section_id'] if parent_result else None
+                current_type = 'section'
+            else:
+                break
+
+        return None
+
+    except sqlite3.Error as e:
+        print(f"DB Error in get_permission_level: {e}")
+        return None
     finally:
         if conn:
             conn.close()
