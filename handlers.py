@@ -117,10 +117,18 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif data.startswith("folder:"):
         folder_id = int(data.split(':')[1])
+        folder_details = database.get_folder_details(folder_id)
+        section_id = folder_details['section_id'] if folder_details else None
+
+        if section_id:
+            back_button_data = f"section:{section_id}"
+        else:
+            back_button_data = "back_to_main"
+
         keyboard = [
             [InlineKeyboardButton("📂 عرض المحتويات", callback_data=f"view_files:{folder_id}:0")],
             [InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_files_to:{folder_id}")],
-            [InlineKeyboardButton("🔙 العودة", callback_data="back_to_main")]
+            [InlineKeyboardButton(f"🔙 عودة", callback_data=back_button_data)]
         ]
         await query.message.edit_text("اختر الإجراء:", reply_markup=InlineKeyboardMarkup(keyboard))
 

@@ -1,7 +1,13 @@
 # keyboards.py
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from database import get_root_sections, get_root_folders, get_subsections, get_folders_in_section
+from database import (
+    get_root_sections, 
+    get_root_folders, 
+    get_subsections, 
+    get_folders_in_section,
+    get_section_details
+)
 
 def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """
@@ -40,7 +46,7 @@ def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 def build_section_view_keyboard(section_id: int) -> InlineKeyboardMarkup:
     """
-    #[تعديل]: بناء واجهة عرض القسم مع زر إعدادات تحت كل عنصر.
+    #[تعديل جوهري]: بناء واجهة عرض القسم مع زر عودة ذكي.
     """
     keyboard_layout = []
     
@@ -70,6 +76,18 @@ def build_section_view_keyboard(section_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton("➕ مجلد جديد هنا", callback_data=f"new_folder_in_sec:{section_id}")
     ]
     keyboard_layout.append(control_buttons)
-    keyboard_layout.append([InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="back_to_main")])
+    
+    # --- زر العودة الذكي ---
+    section_details = get_section_details(section_id)
+    parent_section_id = section_details['parent_section_id'] if section_details else None
+    
+    if parent_section_id:
+        # إذا كان هناك قسم أب، زر العودة يعود إليه
+        back_button = InlineKeyboardButton("🔙 عودة", callback_data=f"section:{parent_section_id}")
+    else:
+        # إذا لم يكن هناك قسم أب (قسم رئيسي)، زر العودة يعود للقائمة الرئيسية
+        back_button = InlineKeyboardButton("🔙 عودة", callback_data="back_to_main")
+        
+    keyboard_layout.append([back_button])
     
     return InlineKeyboardMarkup(keyboard_layout)
