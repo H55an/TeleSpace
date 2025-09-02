@@ -53,11 +53,31 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
     )
 
+    # معالج محادثة إعادة تسمية المجلد
+    rename_folder_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(handlers.rename_folder_prompt, pattern="^rename_folder_prompt:")],
+        states={
+            AWAITING_RENAME_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_new_folder_name)]
+        },
+        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
+    )
+
+    # معالج محادثة إعادة تسمية القسم
+    rename_section_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(handlers.rename_section_prompt, pattern="^rename_section_prompt:")],
+        states={
+            AWAITING_RENAME_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_new_section_name)]
+        },
+        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
+    )
+
     # تسجيل كل المعالجات في التطبيق
     # يتم تسجيل المحادثات أولاً لتكون لها الأولوية في التقاط التحديثات
     application.add_handler(section_conv)
     application.add_handler(folder_conv)
     application.add_handler(upload_conv) # <-- تسجيل المحادثة الجديدة
+    application.add_handler(rename_folder_conv)
+    application.add_handler(rename_section_conv)
     
     # ثم يتم تسجيل الأوامر والمعالج العام للأزرار
     application.add_handler(CommandHandler("start", handlers.start))
@@ -69,4 +89,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

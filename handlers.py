@@ -3,11 +3,13 @@
 import asyncio
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, Message
 from telegram.ext import ContextTypes, ConversationHandler
+from telegram.helpers import escape_markdown
 
 import config
 import database
 from keyboards import build_main_menu_keyboard, build_section_view_keyboard 
 from constants import *
+from database import get_folder_details, rename_folder, get_section_details, rename_section
 
 # --- الدوال المساعدة ---
 async def process_message_for_saving(message: Message) -> dict | None:
@@ -46,7 +48,7 @@ async def view_and_send_folder_contents(update: Update, context: ContextTypes.DE
     for item in items_page:
         try:
             # 1. بناء زر الحذف الخاص بهذا العنصر
-            keyboard = [[
+            keyboard = [[ 
                 InlineKeyboardButton("🗑️ حذف هذا العنصر", callback_data=f"delete_prompt:{item['item_record_id']}")
             ]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -80,15 +82,23 @@ async def view_and_send_folder_contents(update: Update, context: ContextTypes.DE
 
 # --- دوال الواجهة الرئيسية والتصفح ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # ... (تبقى كما هي من الكود الذي قدمته)
     user = update.effective_user
     database.add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
     keyboard = build_main_menu_keyboard(user.id)
-    reply_text = f"مرحبًا بك في TeleSpace .\n\nمساحتك الخاصة على تيليجرام لبناء بيئتك المثالية وتخصيصها بنفسك ، وتخزين كل ما يهمك من المحتوى (ملفات، رسائل، صور، وسائط) بطريقة منظمة ومرنة .\n\n🗂️ يمكنك إنشاء الأقسام والأقسام الفرعية .\n📂 يمكنك إنشاء المجلدات وتخزين ملفاتك فيها ."
-    if update.message: await update.message.reply_html(reply_text, reply_markup=keyboard)
+    reply_text = """مرحبًا بك في TeleSpace .
+
+مساحتك الخاصة على تيليجرام لبناء بيئتك المثالية وتخصيصها بنفسك ، وتخزين كل ما يهمك من المحتوى (ملفات، رسائل، صور، وسائط) بطريقة منظمة ومرنة .
+
+🗂️ يمكنك إنشاء الأقسام والأقسام الفرعية .
+📂 يمكنك إنشاء المجلدات وتخزين ملفاتك فيها ."""
+    if update.message: 
+        await update.message.reply_html(reply_text, reply_markup=keyboard)
     elif update.callback_query:
-        try: await update.callback_query.message.edit_text(reply_text, reply_markup=keyboard, parse_mode='HTML')
-        except Exception: pass
+        try: 
+            await update.callback_query.message.edit_text(reply_text, reply_markup=keyboard, parse_mode='HTML')
+        except Exception: 
+            # قد تفشل إذا كان النص لم يتغير، وهذا طبيعي
+            pass
     return ConversationHandler.END
 
 async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -105,13 +115,12 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif data == "back_to_main":
         await start(update, context)
 
-    # #[تعديل 1]: عند الضغط على اسم المجلد، نعرض خيارات التصفح فقط
     elif data.startswith("folder:"):
         folder_id = int(data.split(':')[1])
         keyboard = [
             [InlineKeyboardButton("📂 عرض المحتويات", callback_data=f"view_files:{folder_id}:0")],
             [InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_files_to:{folder_id}")],
-            [InlineKeyboardButton("🔙 العودة", callback_data="back_to_main")] # يمكن تحسينه لاحقًا ليعود للقسم الأب
+            [InlineKeyboardButton("🔙 العودة", callback_data="back_to_main")]
         ]
         await query.message.edit_text("اختر الإجراء:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -119,49 +128,51 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif data.startswith("settings_section:"):
         section_id = int(data.split(':')[1])
         keyboard = [
-            # [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"rename_section:{section_id}")],
+            [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"rename_section_prompt:{section_id}")],
             [InlineKeyboardButton("🗑️ حذف القسم بالكامل", callback_data=f"delete_section_prompt:{section_id}")],
-            [InlineKeyboardButton("🔙 عودة", callback_data="back_to_main")] # يعود للقائمة الرئيسية
+            [InlineKeyboardButton("🔙 عودة", callback_data="back_to_main")]
         ]
         await query.message.edit_text("خيارات التحكم بالقسم:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # #[تعديل 2]: عند الضغط على زر الإعدادات، نعرض خيارات الإدارة
     elif data.startswith("settings_folder:"):
         folder_id = int(data.split(':')[1])
         keyboard = [
-            # [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"rename_folder:{folder_id}")],
+            [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"rename_folder_prompt:{folder_id}")],
             [InlineKeyboardButton("🔥 حذف كل المحتويات فقط", callback_data=f"delete_all_prompt:{folder_id}")],
             [InlineKeyboardButton("🗑️ حذف المجلد بالكامل", callback_data=f"delete_folder_prompt:{folder_id}")],
             [InlineKeyboardButton("🔙 عودة", callback_data="back_to_main")] 
         ]
         await query.message.edit_text("خيارات التحكم بالمجلد:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # --- منطق عرض وحذف المحتويات (يبقى كما هو) ---
+    # --- منطق عرض وحذف المحتويات ---
     elif data.startswith("view_files:"):
         _, folder_id, offset = data.split(':')
         await view_and_send_folder_contents(update, context, int(folder_id), int(offset))
     
-    # ... (بقية منطق الحذف الفردي وحذف المجلدات والأقسام يبقى كما هو تمامًا)
     elif data.startswith("delete_prompt:"):
         item_id = int(data.split(':')[1])
         text = "⚠️ هل أنت متأكد من أنك تريد حذف هذا العنصر بشكل دائم؟"
         keyboard = [[InlineKeyboardButton("✅ نعم، احذف", callback_data=f"delete_confirm:{item_id}"), InlineKeyboardButton("❌ لا، تراجع", callback_data="delete_cancel")]]
         await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+    
     elif data.startswith("delete_confirm:"):
         item_id = int(data.split(':')[1])
         database.delete_item(item_id)
         await query.message.edit_text(text="✅ تم حذف العنصر بنجاح.")
+    
     elif data == "delete_cancel":
-        await query.message.delete()
+        await query.message.delete() 
         
     elif data.startswith("delete_folder_prompt:"):
         folder_id = int(data.split(':')[1])
-        text = "⚠️ **تحذير!**\nهل تريد بالتأكيد حذف هذا المجلد **وكل محتوياته** بشكل دائم؟"
-        keyboard = [[
+        text = """⚠️ <b>تحذير!</b>
+هل تريد بالتأكيد حذف هذا المجلد <b>وكل محتوياته</b> بشكل دائم؟"""
+        keyboard = [[ 
             InlineKeyboardButton("✅ نعم، احذف المجلد", callback_data=f"delete_folder_confirm:{folder_id}"),
             InlineKeyboardButton("❌ لا، تراجع", callback_data=f"settings_folder:{folder_id}")
         ]]
         await query.message.edit_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
     elif data.startswith("delete_folder_confirm:"):
         folder_id = int(data.split(':')[1])
         database.delete_folder(folder_id)
@@ -170,23 +181,25 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif data.startswith("delete_section_prompt:"):
         section_id = int(data.split(':')[1])
-        text = "🔥 **تحذير خطير جدا!**\nهل تريد بالتأكيد حذف هذا القسم **وكل ما بداخله** بشكل دائم؟"
-        keyboard = [[
+        text = """🔥 <b>تحذير خطير جدا!</b>
+هل تريد بالتأكيد حذف هذا القسم <b>وكل ما بداخله</b> بشكل دائم؟"""
+        keyboard = [[ 
             InlineKeyboardButton("🔥 نعم، متأكد تمامًا", callback_data=f"delete_section_confirm:{section_id}"),
             InlineKeyboardButton("❌ لا، تراجع", callback_data=f"settings_section:{section_id}")
         ]]
         await query.message.edit_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
     elif data.startswith("delete_section_confirm:"):
         section_id = int(data.split(':')[1])
         database.delete_section_recursively(section_id)
         await query.answer("✅ تم حذف القسم وكل محتوياته بنجاح!")
         await start(update, context)
 
-    # --- #[إضافة جديدة]: منطق حذف كل المحتويات ---
     elif data.startswith("delete_all_prompt:"):
         folder_id = int(data.split(':')[1])
-        text = "⚠️ **تحذير!**\nهل تريد بالتأكيد حذف **كل محتويات** هذا المجلد (سيبقى المجلد فارغًا)؟"
-        keyboard = [[
+        text = """⚠️ <b>تحذير!</b>
+هل تريد بالتأكيد حذف <b>كل محتويات</b> هذا المجلد (سيبقى المجلد فارغًا)؟"""
+        keyboard = [[ 
             InlineKeyboardButton("✅ نعم، احذف المحتويات", callback_data=f"delete_all_confirm:{folder_id}"),
             InlineKeyboardButton("❌ لا، تراجع", callback_data=f"settings_folder:{folder_id}")
         ]]
@@ -198,35 +211,39 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.message.edit_text(f"✅ تم حذف {deleted_count} عنصر بنجاح. المجلد الآن فارغ.")
 
 
-
-# --- دوال المحادثات (تبقى كما هي تمامًا من الكود الذي قدمته) ---
+# --- دوال المحادثات ---
 async def new_section_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query; await query.answer(); data = query.data
     parent_id = int(data.split(':')[1]) if data.startswith("new_section_sub:") else None
     context.user_data['parent_section_id'] = parent_id
     await query.message.edit_text(text="يرجى إرسال اسم القسم الجديد:"); return AWAITING_SECTION_NAME
+
 async def receive_section_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user; section_name = update.message.text
     parent_id = context.user_data.get('parent_section_id')
     database.add_section(user_id=user.id, section_name=section_name, parent_section_id=parent_id)
     await update.message.reply_text(f"✅ تم إنشاء قسم '{section_name}' بنجاح!")
     context.user_data.clear(); await start(update, context); return ConversationHandler.END
+
 async def new_folder_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query; await query.answer(); data = query.data
     parent_section_id = int(data.split(':')[1]) if data.startswith("new_folder_in_sec:") else None
     context.user_data['parent_section_id_for_folder'] = parent_section_id
     await query.message.edit_text(text="يرجى إرسال اسم المجلد الجديد:"); return AWAITING_FOLDER_NAME
+
 async def receive_folder_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user; folder_name = update.message.text
     parent_section_id = context.user_data.get('parent_section_id_for_folder')
     database.add_folder(owner_user_id=user.id, folder_name=folder_name, section_id=parent_section_id)
     await update.message.reply_text(f"✅ تم إنشاء مجلد '{folder_name}' بنجاح!")
     context.user_data.clear(); await start(update, context); return ConversationHandler.END
+
 async def add_files_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query; await query.answer(); folder_id = int(query.data.split(':')[1])
     context.user_data['target_folder_id'] = folder_id; context.user_data['files_to_add_buffer'] = []
-    await query.message.edit_text(text="أنت الآن في وضع الإضافة.\n\nأرسل أي عدد من العناصر. عندما تنتهي، أرسل كلمة `حفظ`.")
+    await query.message.edit_text(text="أنت الآن في وضع الإضافة.\nأرسل أي عدد من العناصر. عندما تنتهي، أرسل كلمة `حفظ`.")
     return AWAITING_FILES_FOR_UPLOAD
+
 async def collect_files_and_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message_text = update.message.text
     if message_text and message_text.lower() == "حفظ":
@@ -250,7 +267,77 @@ async def collect_files_and_save(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.get('files_to_add_buffer', []).append(update.message)
         await update.message.reply_text("👍 تم الاستلام. أرسل المزيد أو أرسل `حفظ`.")
         return AWAITING_FILES_FOR_UPLOAD
-async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data.clear(); await update.message.reply_text("تم إلغاء العملية."); await start(update, context)
+
+async def rename_folder_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    folder_id = int(query.data.split(':')[1])
+    context.user_data['folder_to_rename'] = folder_id
+    
+    folder_details = get_folder_details(folder_id)
+    if folder_details:
+        folder_name = escape_markdown(folder_details['folder_name'], version=2)
+        await query.message.edit_text(f"الاسم الحالي للمجلد هو: <b>{folder_name}</b>\n\nالرجاء إرسال الاسم الجديد.", parse_mode='HTML')
+        return AWAITING_RENAME_INPUT
+    else:
+        await query.message.edit_text("عذرًا، لم يتم العثور على المجلد.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+async def receive_new_folder_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    new_name = update.message.text
+    folder_id = context.user_data.get('folder_to_rename')
+    
+    if not folder_id:
+        await update.message.reply_text("حدث خطأ ما. يرجى المحاولة مرة أخرى.")
+        context.user_data.clear()
+        await start(update, context)
+        return ConversationHandler.END
+
+    rename_folder(folder_id, new_name)
+    
+    await update.message.reply_text(f"✅ تم تغيير اسم المجلد بنجاح إلى: {new_name}")
+    
+    context.user_data.clear()
+    await start(update, context)
     return ConversationHandler.END
 
+async def rename_section_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    section_id = int(query.data.split(':')[1])
+    context.user_data['section_to_rename'] = section_id
+    
+    section_details = get_section_details(section_id)
+    if section_details:
+        section_name = escape_markdown(section_details['section_name'], version=2)
+        await query.message.edit_text(f"الاسم الحالي للقسم هو: <b>{section_name}</b>\n\nالرجاء إرسال الاسم الجديد.", parse_mode='HTML')
+        return AWAITING_RENAME_INPUT
+    else:
+        await query.message.edit_text("عذرًا، لم يتم العثور على القسم.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+async def receive_new_section_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    new_name = update.message.text
+    section_id = context.user_data.get('section_to_rename')
+    
+    if not section_id:
+        await update.message.reply_text("حدث خطأ ما. يرجى المحاولة مرة أخرى.")
+        context.user_data.clear()
+        await start(update, context)
+        return ConversationHandler.END
+
+    rename_section(section_id, new_name)
+    
+    await update.message.reply_text(f"✅ تم تغيير اسم القسم بنجاح إلى: {new_name}")
+    
+    context.user_data.clear()
+    await start(update, context)
+    return ConversationHandler.END
+
+async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()
+    await update.message.reply_text("تم إلغاء العملية.")
+    await start(update, context)
+    return ConversationHandler.END

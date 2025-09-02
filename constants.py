@@ -4,5 +4,6 @@ PAGE_SIZE = 10
 (
     AWAITING_SECTION_NAME, 
     AWAITING_FOLDER_NAME, 
-    AWAITING_FILES_FOR_UPLOAD # <-- الحالة الجديدة
-) = range(3)
+    AWAITING_FILES_FOR_UPLOAD, # <-- الحالة الجديدة
+    AWAITING_RENAME_INPUT
+) = range(4)

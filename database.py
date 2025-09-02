@@ -335,3 +335,69 @@ def delete_section_recursively(section_id: int):
     finally:
         if conn:
             conn.close()
+
+def get_folder_details(folder_id: int):
+    """
+    تجلب تفاصيل مجلد معين باستخدام folder_id.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM folders WHERE folder_id = ?", (folder_id,))
+        return cursor.fetchone()
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند جلب تفاصيل المجلد: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def rename_folder(folder_id: int, new_name: str):
+    """
+    تقوم بتحديث اسم مجلد معين.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE folders SET folder_name = ? WHERE folder_id = ?", (new_name, folder_id))
+        conn.commit()
+        print(f"تم تغيير اسم المجلد {folder_id} إلى '{new_name}'.")
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند إعادة تسمية المجلد: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def get_section_details(section_id: int):
+    """
+    تجلب تفاصيل قسم معين باستخدام section_id.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM sections WHERE section_id = ?", (section_id,))
+        return cursor.fetchone()
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند جلب تفاصيل القسم: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def rename_section(section_id: int, new_name: str):
+    """
+    تقوم بتحديث اسم قسم معين.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE sections SET section_name = ? WHERE section_id = ?", (new_name, section_id))
+        conn.commit()
+        print(f"تم تغيير اسم القسم {section_id} إلى '{new_name}'.")
+    except sqlite3.Error as e:
+        print(f"حدث خطأ في قاعدة البيانات عند إعادة تسمية القسم: {e}")
+    finally:
+        if conn:
+            conn.close()
