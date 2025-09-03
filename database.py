@@ -371,8 +371,42 @@ def rename_section(section_id: int, new_name: str):
         if conn:
             conn.close()
 
-
 # --- دوال المشاركة والصلاحيات ---
+def get_or_create_viewer_share_link(owner_user_id: int, content_type: str, content_id: int) -> str:
+    """
+    [جديد] يجلب رابط مشاهدة دائم موجود أو ينشئ واحدًا جديدًا إذا لم يكن موجودًا.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+
+        # ابحث عن رابط مشاهدة موجود
+        cursor.execute(
+            "SELECT share_token FROM shares WHERE content_type = ? AND content_id = ? AND link_type = 'viewer'",
+            (content_type, content_id)
+        )
+        existing_link = cursor.fetchone()
+
+        if existing_link:
+            return existing_link[0]  # أعد التوكن الموجود
+        else:
+            # إذا لم يكن هناك رابط، أنشئ واحدًا جديدًا
+            token = str(uuid.uuid4())
+            cursor.execute(
+                "INSERT INTO shares (share_token, content_type, content_id, owner_user_id, link_type) VALUES (?, ?, ?, ?, ?)",
+                (token, content_type, content_id, owner_user_id, 'viewer')
+            )
+            conn.commit()
+            return token
+
+    except sqlite3.Error as e:
+        print(f"DB Error in get_or_create_viewer_share_link: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+
 def create_share_link(owner_user_id: int, content_type: str, content_id: int, link_type: str) -> str:
     """تنشئ رابط مشاركة فريد وتخزنه."""
     token = str(uuid.uuid4())
@@ -498,6 +532,26 @@ def get_permission_level(user_id: int, content_type: str, content_id: int) -> st
     except sqlite3.Error as e:
         print(f"DB Error in get_permission_level: {e}")
         return None
+    finally:
+        if conn:
+            conn.close()
+
+
+def revoke_permission(user_id: int, content_type: str, content_id: int):
+    """
+    [جديد] تزيل صلاحية مستخدم معين من على عنصر معين.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM permissions WHERE user_id = ? AND content_type = ? AND content_id = ?",
+            (user_id, content_type, content_id)
+        )
+        conn.commit()
+        print(f"Revoked permission for user {user_id} from {content_type}:{content_id}")
+    except sqlite3.Error as e:
+        print(f"DB Error in revoke_permission: {e}")
     finally:
         if conn:
             conn.close()

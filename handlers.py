@@ -12,7 +12,7 @@ from constants import *
 from database import (
     get_folder_details, rename_folder, get_section_details, rename_section,
     create_share_link, get_share_by_token, deactivate_share_link, grant_permission,
-    get_permission_level # <-- [جديد] استيراد الدالة
+    get_permission_level, get_or_create_viewer_share_link, revoke_permission  # <-- [جديد] استيراد الدالة
 )
 
 # --- الدوال المساعدة ---
@@ -196,8 +196,12 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         content_type = parts[0].split('_')[2]
         content_id = int(parts[1])
         
+        permission = database.get_permission_level(user_id, content_type, content_id)
+
         item_name = ""
         text = ""
+        back_button_data = ""
+
         if content_type == 'section':
             details = database.get_section_details(content_id)
             item_name = details['section_name'] if details else ""
@@ -206,31 +210,41 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         else: # folder
             details = database.get_folder_details(content_id)
             item_name = details['folder_name'] if details else ""
-            parent_section_id = details['section_id'] if details else None
             text = f"🔗 *إعدادات مشاركة المجلد: {escape_markdown(item_name, version=2)}*"
-            back_button_data = f"section:{parent_section_id}" if parent_section_id else "back_to_main"
+            back_button_data = f"folder:{content_id}" # Go back to folder view
 
+        # Build keyboard based on permission
         keyboard = [
-            [InlineKeyboardButton("🤝 مشاركة (مشاهدة)", callback_data=f"generate_viewer_link:{content_type}:{content_id}")],
-            [InlineKeyboardButton("👑 إضافة مشرف", callback_data=f"generate_admin_link:{content_type}:{content_id}")],
-            [InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)]
+            [InlineKeyboardButton("🤝 مشاركة (مشاهدة)", callback_data=f"generate_viewer_link:{content_type}:{content_id}")]
         ]
+
+        if permission == 'owner':
+            keyboard.append([InlineKeyboardButton("👑 إضافة مشرف", callback_data=f"generate_admin_link:{content_type}:{content_id}")])
+
+        keyboard.append([InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)])
+        
         await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='MarkdownV2')
 
-    elif data.startswith("generate_viewer_link:") or data.startswith("generate_admin_link:"):
+    elif data.startswith("generate_viewer_link:"):
         parts = data.split(':')
-        link_type = 'viewer' if parts[0].startswith('generate_viewer') else 'admin'
         content_type = parts[1]
         content_id = int(parts[2])
-        token = database.create_share_link(user_id, content_type, content_id, link_type)
+        # [إصلاح] استدعاء الدالة الجديدة للحصول على رابط مشاهدة دائم
+        token = database.get_or_create_viewer_share_link(user_id, content_type, content_id)
         bot_username = (await context.bot.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={token}"
+        text = f"الرابط الدائم للمشاهدة جاهز للمشاركة:\n`{share_link}`"
+        await query.message.edit_text(text, parse_mode='MarkdownV2')
 
-        text_to_escape = f"الرابط جاهز للمشاركة ({link_type}):"
-        escaped_text = escape_markdown(text_to_escape, version=2)
-
-        text = f"{escaped_text}\n`{share_link}`"
-
+    elif data.startswith("generate_admin_link:"):
+        parts = data.split(':')
+        content_type = parts[1]
+        content_id = int(parts[2])
+        # روابط المشرفين لا تزال فريدة وتستخدم لمرة واحدة
+        token = database.create_share_link(user_id, content_type, content_id, 'admin')
+        bot_username = (await context.bot.get_me()).username
+        share_link = f"https://t.me/{bot_username}?start={token}"
+        text = f"رابط دعوة مشرف (يستخدم لمرة واحدة) جاهز للمشاركة:\n`{share_link}`"
         await query.message.edit_text(text, parse_mode='MarkdownV2')
 
     elif data.startswith("settings_section:"):
@@ -330,7 +344,28 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         folder_id = int(data.split(':')[1])
         deleted_count = database.delete_all_items_in_folder(folder_id)
         await query.message.edit_text(f"✅ تم حذف {deleted_count} عنصر بنجاح. المجلد الآن فارغ.")
+    
+    elif data.startswith("leave_item_prompt_"):
+        parts = data.split(':')
+        content_type = parts[0].split('_')[-1]
+        content_id = int(parts[1])
 
+        text = "⚠️ هل أنت متأكد من أنك تريد مغادرة هذا العنصر المشترك؟ ستتم إزالته من قائمتك."
+        keyboard = [[
+            InlineKeyboardButton("✅ نعم، مغادرة", callback_data=f"leave_item_confirm:{content_type}:{content_id}"),
+            InlineKeyboardButton("❌ تراجع", callback_data="back_to_main")
+        ]]
+        await query.message.edit_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("leave_item_confirm:"):
+        parts = data.split(':')
+        content_type = parts[1]
+        content_id = int(parts[2])
+
+        database.revoke_permission(user_id, content_type, content_id)
+
+        await query.answer("✅ تمت مغادرة العنصر بنجاح!", show_alert=True)
+        await start(update, context)
 
 # --- دوال المحادثات ---
 async def new_section_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
