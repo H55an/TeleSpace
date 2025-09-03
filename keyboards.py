@@ -11,16 +11,18 @@ from database import (
 )
 
 def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    """[تعديل]: بناء الواجهة الرئيسية مع إظهار الأزرار بناءً على الصلاحيات."""
+    """[تعديل]: بناء الواجهة الرئيسية مع إظهار الأزرار والرموز بناءً على الصلاحيات."""
     keyboard_layout = []
     
     # جلب الأقسام الرئيسية
     root_sections = get_root_sections(user_id)
     for section in root_sections:
-        # التحقق من الصلاحية قبل عرض أزرار التحكم
         permission = get_permission_level(user_id, 'section', section['section_id'])
-        row = [InlineKeyboardButton(f"📂 {section['section_name']}", callback_data=f"section:{section['section_id']}")]
+        prefix = "🔗 " if permission in ['admin', 'viewer'] else ""
+        
+        row = [InlineKeyboardButton(f"{prefix}🗂️ {section['section_name']}", callback_data=f"section:{section['section_id']}")]
         keyboard_layout.append(row)
+
         if permission in ['owner', 'admin']:
             row1 = [
                 InlineKeyboardButton("⚙️", callback_data=f"settings_section:{section['section_id']}"),
@@ -32,8 +34,11 @@ def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     root_folders = get_root_folders(user_id)
     for folder in root_folders:
         permission = get_permission_level(user_id, 'folder', folder['folder_id'])
-        row = [InlineKeyboardButton(f"📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}")]
+        prefix = "🔗 " if permission in ['admin', 'viewer'] else ""
+
+        row = [InlineKeyboardButton(f"{prefix}📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}")]
         keyboard_layout.append(row)
+
         if permission in ['owner', 'admin']:
             row1 = [
                 InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}"),
@@ -51,15 +56,18 @@ def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard_layout)
 
 def build_section_view_keyboard(section_id: int, user_id: int) -> InlineKeyboardMarkup:
-    """[تعديل]: بناء واجهة عرض القسم مع إظهار الأزرار بناءً على الصلاحيات."""
+    """[تعديل]: بناء واجهة عرض القسم مع إظهار الأزرار والرموز بناءً على الصلاحيات."""
     keyboard_layout = []
     
     # جلب الأقسام الفرعية
     subsections = get_subsections(section_id)
     for sub in subsections:
         permission = get_permission_level(user_id, 'section', sub['section_id'])
-        row = [InlineKeyboardButton(f"📂 {sub['section_name']}", callback_data=f"section:{sub['section_id']}")]
+        prefix = "🔗 " if permission in ['admin', 'viewer'] else ""
+        
+        row = [InlineKeyboardButton(f"{prefix}🗂️ {sub['section_name']}", callback_data=f"section:{sub['section_id']}")]
         keyboard_layout.append(row)
+
         if permission in ['owner', 'admin']:
             row1 = [
                 InlineKeyboardButton("⚙️", callback_data=f"settings_section:{sub['section_id']}"),
@@ -71,8 +79,11 @@ def build_section_view_keyboard(section_id: int, user_id: int) -> InlineKeyboard
     folders_in_section = get_folders_in_section(section_id)
     for folder in folders_in_section:
         permission = get_permission_level(user_id, 'folder', folder['folder_id'])
-        row = [InlineKeyboardButton(f"📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}")]
+        prefix = "🔗 " if permission in ['admin', 'viewer'] else ""
+
+        row = [InlineKeyboardButton(f"{prefix}📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}")]
         keyboard_layout.append(row)
+
         if permission in ['owner', 'admin']:
             row1 = [
                 InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}"),

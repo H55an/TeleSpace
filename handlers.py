@@ -134,60 +134,80 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = query.from_user.id
     await query.answer()
     data = query.data
-    
+
     if data.startswith("section:"):
         section_id = int(data.split(':')[1])
-        
-        # [جديد] التحقق من الصلاحية قبل عرض محتويات القسم
         permission = database.get_permission_level(user_id, 'section', section_id)
+
         if permission is None:
             await query.answer("ليس لديك صلاحية للوصول إلى هذا القسم.", show_alert=True)
             return
 
-        keyboard = build_section_view_keyboard(section_id, user_id)
-        await query.message.edit_text("اختر عنصرًا للتصفح أو `⚙️` للتحكم:", reply_markup=keyboard)
+        section_details = database.get_section_details(section_id)
+        section_name = section_details['section_name'] if section_details else "غير مسمى"
         
+        text = ""
+        if permission in ['owner', 'admin']:
+            text = f"📂 *قسم: {escape_markdown(section_name, version=2)}*\n\nتصفح المحتويات وأضف أقسام/مجلدات أو استخدم `⚙️` للإدارة و `🔗` للمشاركة\."
+        else: # viewer
+            text = f"🔗 *أنت تتصفح: {escape_markdown(section_name, version=2)}*"
+
+        keyboard = build_section_view_keyboard(section_id, user_id)
+        await query.message.edit_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
+
     elif data == "back_to_main":
         await start(update, context)
 
     elif data.startswith("folder:"):
         folder_id = int(data.split(':')[1])
-
-        # [جديد] التحقق من الصلاحية قبل عرض خيارات المجلد
         permission = database.get_permission_level(user_id, 'folder', folder_id)
+
         if permission is None:
             await query.answer("ليس لديك صلاحية للوصول إلى هذا المجلد.", show_alert=True)
             return
 
         folder_details = database.get_folder_details(folder_id)
+        folder_name = folder_details['folder_name'] if folder_details else "غير مسمى"
         section_id = folder_details['section_id'] if folder_details else None
+
+        text = ""
+        keyboard_layout = []
         
-        # --- [تعديل] التحقق من الصلاحيات قبل عرض زر الإضافة ---
-        # هذا الجزء موجود بالفعل ويستخدم 'permission' الذي تم جلبه للتو
-        
-        keyboard_layout = [
-            [InlineKeyboardButton("📂 عرض المحتويات", callback_data=f"view_files:{folder_id}:0")]
-        ]
-        
+        # [جديد] تحديد نص زر عرض المحتويات بناءً على الصلاحية
+        prefix = "🔗 " if permission in ['admin', 'viewer'] else ""
+        view_contents_button_text = f"{prefix}📂 عرض المحتويات"
+        view_contents_button = InlineKeyboardButton(view_contents_button_text, callback_data=f"view_files:{folder_id}:0")
+
         if permission in ['owner', 'admin']:
+            text = f"📁 *مجلد: {escape_markdown(folder_name, version=2)}*\n\nاختر الإجراء المطلوب\."
+            keyboard_layout.append([view_contents_button])
             keyboard_layout.append([InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_files_to:{folder_id}")])
+        else: # viewer
+            text = f"🔗 *مجلد: {escape_markdown(folder_name, version=2)}*"
+            keyboard_layout.append([view_contents_button])
 
         back_button_data = f"section:{section_id}" if section_id else "back_to_main"
-        keyboard_layout.append([InlineKeyboardButton(f"🔙 عودة", callback_data=back_button_data)])
+        keyboard_layout.append([InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)])
         
-        await query.message.edit_text("اختر الإجراء:", reply_markup=InlineKeyboardMarkup(keyboard_layout))
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard_layout), parse_mode='MarkdownV2')
 
     elif data.startswith("share_menu_"):
         parts = data.split(':')
         content_type = parts[0].split('_')[2]
         content_id = int(parts[1])
         
-        # تحديد زر العودة المناسب
+        item_name = ""
+        text = ""
         if content_type == 'section':
-             back_button_data = f"section:{content_id}"
+            details = database.get_section_details(content_id)
+            item_name = details['section_name'] if details else ""
+            text = f"🔗 *إعدادات مشاركة القسم: {escape_markdown(item_name, version=2)}*"
+            back_button_data = f"section:{content_id}"
         else: # folder
-            folder_details = database.get_folder_details(content_id)
-            parent_section_id = folder_details['section_id'] if folder_details else None
+            details = database.get_folder_details(content_id)
+            item_name = details['folder_name'] if details else ""
+            parent_section_id = details['section_id'] if details else None
+            text = f"🔗 *إعدادات مشاركة المجلد: {escape_markdown(item_name, version=2)}*"
             back_button_data = f"section:{parent_section_id}" if parent_section_id else "back_to_main"
 
         keyboard = [
@@ -195,8 +215,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
             [InlineKeyboardButton("👑 إضافة مشرف", callback_data=f"generate_admin_link:{content_type}:{content_id}")],
             [InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)]
         ]
-        await query.message.edit_text("اختر نوع رابط المشاركة:", reply_markup=InlineKeyboardMarkup(keyboard))
-
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='MarkdownV2')
 
     elif data.startswith("generate_viewer_link:") or data.startswith("generate_admin_link:"):
         parts = data.split(':')
@@ -207,11 +226,9 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         bot_username = (await context.bot.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={token}"
 
-        # [تصحيح] استخدام escape_markdown لتجنب الأخطاء
         text_to_escape = f"الرابط جاهز للمشاركة ({link_type}):"
         escaped_text = escape_markdown(text_to_escape, version=2)
 
-        # نضع الرابط داخل `code` لذا لا نحتاج لعمل escape له
         text = f"{escaped_text}\n`{share_link}`"
 
         await query.message.edit_text(text, parse_mode='MarkdownV2')
@@ -219,27 +236,38 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif data.startswith("settings_section:"):
         section_id = int(data.split(':')[1])
         section_details = get_section_details(section_id)
+        section_name = section_details['section_name'] if section_details else ""
         parent_id = section_details['parent_section_id'] if section_details else None
         back_button_data = f"section:{parent_id}" if parent_id else "back_to_main"
+        
+        text = f"⚙️ *إعدادات القسم: {escape_markdown(section_name, version=2)}*"
+
         keyboard = [
             [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"rename_section_prompt:{section_id}")],
             [InlineKeyboardButton("🗑️ حذف القسم بالكامل", callback_data=f"delete_section_prompt:{section_id}")],
             [InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)]
         ]
-        await query.message.edit_text("خيارات التحكم بالقسم:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='MarkdownV2')
 
     elif data.startswith("settings_folder:"):
         folder_id = int(data.split(':')[1])
         folder_details = get_folder_details(folder_id)
-        section_id = folder_details['section_id'] if folder_details else None
+        folder_name = folder_details['folder_name'] if folder_details else ""
+        
+        # Note: The back button logic for a folder inside settings should go back to the folder view, not the section.
+        # The original code had f"folder:{folder_id}" which is correct.
         back_button_data = f"folder:{folder_id}"
+        
+        text = f"⚙️ *إعدادات المجلد: {escape_markdown(folder_name, version=2)}*"
+
         keyboard = [
             [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"rename_folder_prompt:{folder_id}")],
             [InlineKeyboardButton("🔥 حذف كل المحتويات فقط", callback_data=f"delete_all_prompt:{folder_id}")],
             [InlineKeyboardButton("🗑️ حذف المجلد بالكامل", callback_data=f"delete_folder_prompt:{folder_id}")],
             [InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)] 
         ]
-        await query.message.edit_text("خيارات التحكم بالمجلد:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='MarkdownV2')
+
 
     elif data.startswith("view_files:"):
         _, folder_id, offset = data.split(':')
