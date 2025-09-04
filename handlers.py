@@ -148,7 +148,9 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         text = ""
         if permission in ['owner', 'admin']:
-            text = f"📂 *قسم: {escape_markdown(section_name, version=2)}*\n\nتصفح المحتويات وأضف أقسام/مجلدات أو استخدم `⚙️` للإدارة و `🔗` للمشاركة\."
+            text = f"""📂 *قسم: {escape_markdown(section_name, version=2)}*
+            
+            تصفح المحتويات وأضف أقسام/مجلدات أو استخدم `⚙️` للإدارة و `🔗` للمشاركة."""
         else: # viewer
             text = f"🔗 *أنت تتصفح: {escape_markdown(section_name, version=2)}*"
 
@@ -179,7 +181,9 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         view_contents_button = InlineKeyboardButton(view_contents_button_text, callback_data=f"view_files:{folder_id}:0")
 
         if permission in ['owner', 'admin']:
-            text = f"📁 *مجلد: {escape_markdown(folder_name, version=2)}*\n\nاختر الإجراء المطلوب\."
+            text = f"""📁 *مجلد: {escape_markdown(folder_name, version=2)}*
+            
+            اختر الإجراء المطلوب."""
             keyboard_layout.append([view_contents_button])
             keyboard_layout.append([InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_files_to:{folder_id}")])
         else: # viewer
@@ -233,7 +237,8 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         token = database.get_or_create_viewer_share_link(user_id, content_type, content_id)
         bot_username = (await context.bot.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={token}"
-        text = f"الرابط الدائم للمشاهدة جاهز للمشاركة:\n`{share_link}`"
+        text = f"""رابط مباشر لمشاركة هذا القسم/المجلد مع الجميع:
+        `{share_link}`"""
         await query.message.edit_text(text, parse_mode='MarkdownV2')
 
     elif data.startswith("generate_admin_link:"):
@@ -244,7 +249,8 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         token = database.create_share_link(user_id, content_type, content_id, 'admin')
         bot_username = (await context.bot.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={token}"
-        text = f"رابط دعوة مشرف (يستخدم لمرة واحدة) جاهز للمشاركة:\n`{share_link}`"
+        text = f"""رابط دعوة مشرف يستخدم لمرة واحدة جاهز للمشاركة:
+        `{share_link}`"""
         await query.message.edit_text(text, parse_mode='MarkdownV2')
 
     elif data.startswith("settings_section:"):
