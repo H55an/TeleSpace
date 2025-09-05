@@ -36,17 +36,28 @@ def add_section(user_id: int, section_name: str, parent_section_id: int = None):
             conn.close()
 
 def get_root_sections(user_id: int):
-    """[تعديل]: تجلب الأقسام الرئيسية التي يملكها المستخدم أو لديه صلاحية عليها."""
+    """
+    [تعديل جذري]: تجلب الأقسام التي تظهر في الواجهة الرئيسية للمستخدم.
+    - الأقسام التي يملكها وليس لها أب.
+    - الأقسام التي تمت مشاركتها معه مباشرة.
+    """
     try:
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         query = """
+            -- الأقسام التي يملكها المستخدم في المستوى الجذر
+            SELECT section_id, section_name, user_id as owner_user_id
+            FROM sections
+            WHERE user_id = :user_id AND parent_section_id IS NULL
+
+            UNION
+
+            -- الأقسام التي تمت مشاركتها مع المستخدم مباشرة
             SELECT s.section_id, s.section_name, s.user_id as owner_user_id
             FROM sections s
-            LEFT JOIN permissions p ON s.section_id = p.content_id AND p.content_type = 'section'
-            WHERE (s.user_id = :user_id OR p.user_id = :user_id) AND s.parent_section_id IS NULL
-            GROUP BY s.section_id
+            JOIN permissions p ON s.section_id = p.content_id
+            WHERE p.user_id = :user_id AND p.content_type = 'section'
         """
         cursor.execute(query, {'user_id': user_id})
         return cursor.fetchall()
@@ -94,17 +105,28 @@ def add_folder(owner_user_id: int, folder_name: str, section_id: int = None):
 
 
 def get_root_folders(user_id: int):
-    """[تعديل]: تجلب المجلدات الرئيسية التي يملكها المستخدم أو لديه صلاحية عليها."""
+    """
+    [تعديل جذري]: تجلب المجلدات التي تظهر في الواجهة الرئيسية للمستخدم.
+    - المجلدات التي يملكها وليس لها أب.
+    - المجلدات التي تمت مشاركتها معه مباشرة.
+    """
     try:
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         query = """
+            -- المجلدات التي يملكها المستخدم في المستوى الجذر
+            SELECT folder_id, folder_name, owner_user_id
+            FROM folders
+            WHERE owner_user_id = :user_id AND section_id IS NULL
+
+            UNION
+
+            -- المجلدات التي تمت مشاركتها مع المستخدم مباشرة
             SELECT f.folder_id, f.folder_name, f.owner_user_id
             FROM folders f
-            LEFT JOIN permissions p ON f.folder_id = p.content_id AND p.content_type = 'folder'
-            WHERE (f.owner_user_id = :user_id OR p.user_id = :user_id) AND f.section_id IS NULL
-            GROUP BY f.folder_id
+            JOIN permissions p ON f.folder_id = p.content_id
+            WHERE p.user_id = :user_id AND p.content_type = 'folder'
         """
         cursor.execute(query, {'user_id': user_id})
         return cursor.fetchall()
@@ -372,6 +394,26 @@ def rename_section(section_id: int, new_name: str):
             conn.close()
 
 # --- دوال المشاركة والصلاحيات ---
+
+def has_direct_permission(user_id: int, content_type: str, content_id: int) -> bool:
+    """
+    [جديد] يتحقق مما إذا كان للمستخدم صلاحية مباشرة (غير موروثة) على عنصر.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT permission_id FROM permissions WHERE user_id = ? AND content_type = ? AND content_id = ?",
+            (user_id, content_type, content_id)
+        )
+        return cursor.fetchone() is not None
+    except sqlite3.Error as e:
+        print(f"DB Error in has_direct_permission: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 def get_or_create_viewer_share_link(owner_user_id: int, content_type: str, content_id: int) -> str:
     """
     [جديد] يجلب رابط مشاهدة دائم موجود أو ينشئ واحدًا جديدًا إذا لم يكن موجودًا.

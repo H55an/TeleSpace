@@ -12,7 +12,7 @@ from constants import *
 from database import (
     get_folder_details, rename_folder, get_section_details, rename_section,
     create_share_link, get_share_by_token, deactivate_share_link, grant_permission,
-    get_permission_level, get_or_create_viewer_share_link, revoke_permission  # <-- [جديد] استيراد الدالة
+    get_permission_level, get_or_create_viewer_share_link, revoke_permission
 )
 
 # --- الدوال المساعدة ---
@@ -34,7 +34,6 @@ async def view_and_send_folder_contents(update: Update, context: ContextTypes.DE
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
-    # --- [تعديل] التحقق من الصلاحيات قبل إظهار زر الحذف ---
     permission = get_permission_level(user_id, 'folder', folder_id)
     can_delete = permission in ['owner', 'admin']
 
@@ -113,19 +112,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             await update.message.reply_text("عذرًا، هذا الرابط غير صالح أو تم استخدامه بالفعل.")
 
     keyboard = build_main_menu_keyboard(user.id)
-    reply_text = """مرحبًا بك في TeleSpace .
+    # [تعديل] تم تهريب النقاط وتغيير النص ليتوافق مع MarkdownV2
+    reply_text = """*مرحبًا بك في TeleSpace* \.
 
-مساحتك الخاصة على تيليجرام لبناء بيئتك المثالية وتخصيصها بنفسك ، وتخزين كل ما يهمك من المحتوى (ملفات، رسائل، صور، وسائط) بطريقة منظمة ومرنة .
+مساحتك الخاصة على تيليجرام لبناء بيئتك المثالية وتخصيصها بنفسك ، وتخزين كل ما يهمك من المحتوى \(ملفات، رسائل، صور، وسائط\) بطريقة منظمة ومرنة \.
 
-🗂️ يمكنك إنشاء الأقسام والأقسام الفرعية .
-📂 يمكنك إنشاء المجلدات وتخزين ملفاتك فيها ."""
+🗂️ يمكنك إنشاء الأقسام والأقسام الفرعية \.
+📂 يمكنك إنشاء المجلدات وتخزين ملفاتك فيها \."""
     
     if update.callback_query:
         try: 
-            await update.callback_query.message.edit_text(reply_text, reply_markup=keyboard, parse_mode='HTML')
+            # [تعديل] تغيير parse_mode إلى MarkdownV2
+            await update.callback_query.message.edit_text(reply_text, reply_markup=keyboard, parse_mode='MarkdownV2')
         except Exception: pass
     else:
-        await update.message.reply_html(reply_text, reply_markup=keyboard)
+        # [تعديل] تغيير reply_html إلى reply_text مع parse_mode='MarkdownV2'
+        await update.message.reply_text(reply_text, reply_markup=keyboard, parse_mode='MarkdownV2')
         
     return ConversationHandler.END
 
@@ -150,7 +152,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         if permission in ['owner', 'admin']:
             text = f"""📂 *قسم: {escape_markdown(section_name, version=2)}*
             
-            تصفح المحتويات وأضف أقسام/مجلدات أو استخدم `⚙️` للإدارة و `🔗` للمشاركة."""
+            تصفح المحتويات وأضف أقسام/مجلدات أو استخدم `⚙️` للإدارة و `🔗` للمشاركة\."""
         else: # viewer
             text = f"🔗 *أنت تتصفح: {escape_markdown(section_name, version=2)}*"
 
@@ -175,7 +177,6 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         text = ""
         keyboard_layout = []
         
-        # [جديد] تحديد نص زر عرض المحتويات بناءً على الصلاحية
         prefix = "🔗 " if permission in ['admin', 'viewer'] else ""
         view_contents_button_text = f"{prefix}📂 عرض المحتويات"
         view_contents_button = InlineKeyboardButton(view_contents_button_text, callback_data=f"view_files:{folder_id}:0")
@@ -183,7 +184,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         if permission in ['owner', 'admin']:
             text = f"""📁 *مجلد: {escape_markdown(folder_name, version=2)}*
             
-            اختر الإجراء المطلوب."""
+            اختر الإجراء المطلوب\."""
             keyboard_layout.append([view_contents_button])
             keyboard_layout.append([InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_files_to:{folder_id}")])
         else: # viewer
@@ -217,7 +218,6 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
             text = f"🔗 *إعدادات مشاركة المجلد: {escape_markdown(item_name, version=2)}*"
             back_button_data = f"folder:{content_id}" # Go back to folder view
 
-        # Build keyboard based on permission
         keyboard = [
             [InlineKeyboardButton("🤝 مشاركة (مشاهدة)", callback_data=f"generate_viewer_link:{content_type}:{content_id}")]
         ]
@@ -233,23 +233,51 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         parts = data.split(':')
         content_type = parts[1]
         content_id = int(parts[2])
-        # [إصلاح] استدعاء الدالة الجديدة للحصول على رابط مشاهدة دائم
         token = database.get_or_create_viewer_share_link(user_id, content_type, content_id)
         bot_username = (await context.bot.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={token}"
-        text = f"""رابط مباشر لمشاركة هذا القسم/المجلد مع الجميع:
+        text = f"""رابط مباشر لمشاركة هذا القسم/المجلد مع الجميع\:
         `{share_link}`"""
         await query.message.edit_text(text, parse_mode='MarkdownV2')
+
+    elif data.startswith("get_viewer_link:"):
+        parts = query.data.split(':')
+        content_type = parts[1]
+        content_id = int(parts[2])
+
+        owner_id = None
+        if content_type == 'section':
+            details = database.get_section_details(content_id)
+            if details: owner_id = details['user_id']
+        elif content_type == 'folder':
+            details = database.get_folder_details(content_id)
+            if details: owner_id = details['owner_user_id']
+
+        if not owner_id:
+            await query.edit_message_text("عذرًا، حدث خطأ أثناء العثور على مالك العنصر.")
+            return
+
+        token = database.get_or_create_viewer_share_link(owner_id, content_type, content_id)
+        bot_username = (await context.bot.get_me()).username
+        share_link = f"https://t.me/{bot_username}?start={token}"
+        
+        text = f"""🔗 *الرابط الدائم للمشاهدة*
+
+هذا هو الرابط الذي يمكنك مشاركته مع الآخرين لمنحهم صلاحية المشاهدة\.
+
+`{share_link}`"""
+        
+        keyboard = [[InlineKeyboardButton("🔙 عودة إلى القائمة الرئيسية", callback_data="back_to_main")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='MarkdownV2')
 
     elif data.startswith("generate_admin_link:"):
         parts = data.split(':')
         content_type = parts[1]
         content_id = int(parts[2])
-        # روابط المشرفين لا تزال فريدة وتستخدم لمرة واحدة
         token = database.create_share_link(user_id, content_type, content_id, 'admin')
         bot_username = (await context.bot.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={token}"
-        text = f"""رابط دعوة مشرف يستخدم لمرة واحدة جاهز للمشاركة:
+        text = f"""رابط دعوة مشرف يستخدم لمرة واحدة جاهز للمشاركة\:
         `{share_link}`"""
         await query.message.edit_text(text, parse_mode='MarkdownV2')
 
@@ -274,8 +302,6 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         folder_details = get_folder_details(folder_id)
         folder_name = folder_details['folder_name'] if folder_details else ""
         
-        # Note: The back button logic for a folder inside settings should go back to the folder view, not the section.
-        # The original code had f"folder:{folder_id}" which is correct.
         back_button_data = f"folder:{folder_id}"
         
         text = f"⚙️ *إعدادات المجلد: {escape_markdown(folder_name, version=2)}*"
@@ -357,7 +383,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         content_id = int(parts[1])
 
         text = "⚠️ هل أنت متأكد من أنك تريد مغادرة هذا العنصر المشترك؟ ستتم إزالته من قائمتك."
-        keyboard = [[
+        keyboard = [[ 
             InlineKeyboardButton("✅ نعم، مغادرة", callback_data=f"leave_item_confirm:{content_type}:{content_id}"),
             InlineKeyboardButton("❌ تراجع", callback_data="back_to_main")
         ]]
@@ -375,28 +401,68 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # --- دوال المحادثات ---
 async def new_section_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query; await query.answer(); data = query.data
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = query.from_user.id
+
     parent_id = int(data.split(':')[1]) if data.startswith("new_section_sub:") else None
     context.user_data['parent_section_id'] = parent_id
-    await query.message.edit_text(text="يرجى إرسال اسم القسم الجديد:"); return AWAITING_SECTION_NAME
+
+    # --- [تعديل وراثة الملكية] ---
+    owner_id = user_id
+    if parent_id:
+        parent_section_details = database.get_section_details(parent_id)
+        if parent_section_details:
+            owner_id = parent_section_details['user_id']
+    context.user_data['owner_id'] = owner_id
+    # --- نهاية التعديل ---
+
+    await query.message.edit_text(text="يرجى إرسال اسم القسم الجديد:")
+    return AWAITING_SECTION_NAME
 
 async def receive_section_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user = update.effective_user; section_name = update.message.text
+    section_name = update.message.text
     parent_id = context.user_data.get('parent_section_id')
-    database.add_section(user_id=user.id, section_name=section_name, parent_section_id=parent_id)
+    # --- [تعديل وراثة الملكية] ---
+    owner_id = context.user_data.get('owner_id')
+    # --- نهاية التعديل ---
+
+    database.add_section(user_id=owner_id, section_name=section_name, parent_section_id=parent_id)
     await update.message.reply_text(f"✅ تم إنشاء قسم '{section_name}' بنجاح!")
-    context.user_data.clear(); await start(update, context); return ConversationHandler.END
+    context.user_data.clear()
+    await start(update, context)
+    return ConversationHandler.END
 
 async def new_folder_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query; await query.answer(); data = query.data
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = query.from_user.id
+
     parent_section_id = int(data.split(':')[1]) if data.startswith("new_folder_in_sec:") else None
     context.user_data['parent_section_id_for_folder'] = parent_section_id
-    await query.message.edit_text(text="يرجى إرسال اسم المجلد الجديد:"); return AWAITING_FOLDER_NAME
+
+    # --- [تعديل وراثة الملكية] ---
+    owner_id = user_id
+    if parent_section_id:
+        parent_section_details = database.get_section_details(parent_section_id)
+        if parent_section_details:
+            owner_id = parent_section_details['user_id']
+    context.user_data['owner_id'] = owner_id
+    # --- نهاية التعديل ---
+
+    await query.message.edit_text(text="يرجى إرسال اسم المجلد الجديد:")
+    return AWAITING_FOLDER_NAME
 
 async def receive_folder_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user = update.effective_user; folder_name = update.message.text
+    folder_name = update.message.text
     parent_section_id = context.user_data.get('parent_section_id_for_folder')
-    database.add_folder(owner_user_id=user.id, folder_name=folder_name, section_id=parent_section_id)
+    # --- [تعديل وراثة الملكية] ---
+    owner_id = context.user_data.get('owner_id')
+    # --- نهاية التعديل ---
+
+    database.add_folder(owner_user_id=owner_id, folder_name=folder_name, section_id=parent_section_id)
     await update.message.reply_text(f"✅ تم إنشاء مجلد '{folder_name}' بنجاح!")
     context.user_data.clear(); await start(update, context); return ConversationHandler.END
 

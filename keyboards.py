@@ -2,16 +2,17 @@
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from database import (
-    get_root_sections, 
-    get_root_folders, 
-    get_subsections, 
+    get_root_sections,
+    get_root_folders,
+    get_subsections,
     get_folders_in_section,
     get_section_details,
-    get_permission_level # <-- [جديد] استيراد الدالة المحورية
+    get_permission_level,
+    has_direct_permission
 )
 
 def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    """[تعديل]: بناء الواجهة الرئيسية مع إظهار الأزرار والرموز بناءً على الصلاحيات."""
+    """[تعديل جذري]: بناء الواجهة الرئيسية مع أزرار تحكم سياقية منفصلة."""
     keyboard_layout = []
     
     # جلب الأقسام الرئيسية
@@ -20,18 +21,21 @@ def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
         permission = get_permission_level(user_id, 'section', section['section_id'])
         prefix = "🔗 " if permission in ['admin', 'viewer'] else ""
         
-        row = [InlineKeyboardButton(f"{prefix}🗂️ {section['section_name']}", callback_data=f"section:{section['section_id']}")]
-        keyboard_layout.append(row)
+        section_button = InlineKeyboardButton(f"{prefix}🗂️ {section['section_name']}", callback_data=f"section:{section['section_id']}")
+        keyboard_layout.append([section_button])
 
-        button_row = []
-        if permission in ['owner', 'admin']:
-            button_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_section:{section['section_id']}"))
-            button_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_section:{section['section_id']}"))
-        if permission == 'viewer':
-            button_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_section:{section['section_id']}"))
-            button_row.append(InlineKeyboardButton("🗑️", callback_data=f"leave_item_prompt_section:{section['section_id']}"))
-        if button_row:
-            keyboard_layout.append(button_row)
+        controls_row = []
+        is_direct_share = has_direct_permission(user_id, 'section', section['section_id'])
+
+        if permission == 'owner':
+            controls_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_section:{section['section_id']}"))
+            controls_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_section:{section['section_id']}"))
+        elif (permission == 'admin' or permission == 'viewer') and is_direct_share:
+            controls_row.append(InlineKeyboardButton("🔗", callback_data=f"get_viewer_link:section:{section['section_id']}"))
+            controls_row.append(InlineKeyboardButton("🗑️", callback_data=f"leave_item_prompt_section:{section['section_id']}"))
+        
+        if controls_row:
+            keyboard_layout.append(controls_row)
 
     # جلب المجلدات الرئيسية
     root_folders = get_root_folders(user_id)
@@ -39,20 +43,22 @@ def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
         permission = get_permission_level(user_id, 'folder', folder['folder_id'])
         prefix = "🔗 " if permission in ['admin', 'viewer'] else ""
 
-        row = [InlineKeyboardButton(f"{prefix}📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}")]
-        keyboard_layout.append(row)
+        folder_button = InlineKeyboardButton(f"{prefix}📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}")
+        keyboard_layout.append([folder_button])
 
-        button_row = []
-        if permission in ['owner', 'admin']:
-            button_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}"))
-            button_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_folder:{folder['folder_id']}"))
-        if permission == 'viewer':
-            button_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_folder:{folder['folder_id']}"))
-            button_row.append(InlineKeyboardButton("🗑️", callback_data=f"leave_item_prompt_folder:{folder['folder_id']}"))
-        if button_row:
-            keyboard_layout.append(button_row)
+        controls_row = []
+        is_direct_share = has_direct_permission(user_id, 'folder', folder['folder_id'])
+
+        if permission == 'owner':
+            controls_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}"))
+            controls_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_folder:{folder['folder_id']}"))
+        elif (permission == 'admin' or permission == 'viewer') and is_direct_share:
+            controls_row.append(InlineKeyboardButton("🔗", callback_data=f"get_viewer_link:folder:{folder['folder_id']}"))
+            controls_row.append(InlineKeyboardButton("🗑️", callback_data=f"leave_item_prompt_folder:{folder['folder_id']}"))
+
+        if controls_row:
+            keyboard_layout.append(controls_row)
         
-    # أزرار الإنشاء (دائمًا ظاهرة في القائمة الرئيسية)
     control_buttons = [
         InlineKeyboardButton("➕ قسم رئيسي", callback_data="new_section_root"),
         InlineKeyboardButton("➕ مجلد رئيسي", callback_data="new_folder_root")
@@ -62,48 +68,45 @@ def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard_layout)
 
 def build_section_view_keyboard(section_id: int, user_id: int) -> InlineKeyboardMarkup:
-    """[تعديل]: بناء واجهة عرض القسم مع إظهار الأزرار والرموز بناءً على الصلاحيات."""
+    """[تعديل جذري]: بناء واجهة عرض القسم مع أزرار تحكم سياقية منفصلة."""
     keyboard_layout = []
     
-    # جلب الأقسام الفرعية
     subsections = get_subsections(section_id)
     for sub in subsections:
         permission = get_permission_level(user_id, 'section', sub['section_id'])
         prefix = "🔗 " if permission in ['admin', 'viewer'] else ""
         
-        row = [InlineKeyboardButton(f"{prefix}🗂️ {sub['section_name']}", callback_data=f"section:{sub['section_id']}")]
-        keyboard_layout.append(row)
+        section_button = InlineKeyboardButton(f"{prefix}🗂️ {sub['section_name']}", callback_data=f"section:{sub['section_id']}")
+        keyboard_layout.append([section_button])
 
-        button_row = []
-        if permission in ['owner', 'admin']:
-            button_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_section:{sub['section_id']}"))
-            button_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_section:{sub['section_id']}"))
-        if permission == 'viewer':
-            button_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_section:{sub['section_id']}"))
-            button_row.append(InlineKeyboardButton("🗑️", callback_data=f"leave_item_prompt_section:{sub['section_id']}"))
-        if button_row:
-            keyboard_layout.append(button_row)
+        controls_row = []
+        if permission == 'owner':
+            controls_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_section:{sub['section_id']}"))
+            controls_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_section:{sub['section_id']}"))
+        elif permission == 'admin':
+            controls_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_section:{sub['section_id']}"))
+        
+        if controls_row:
+            keyboard_layout.append(controls_row)
 
-    # جلب المجلدات داخل القسم
     folders_in_section = get_folders_in_section(section_id)
     for folder in folders_in_section:
         permission = get_permission_level(user_id, 'folder', folder['folder_id'])
         prefix = "🔗 " if permission in ['admin', 'viewer'] else ""
 
-        row = [InlineKeyboardButton(f"{prefix}📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}")]
-        keyboard_layout.append(row)
+        folder_button = InlineKeyboardButton(f"{prefix}📁 {folder['folder_name']}", callback_data=f"folder:{folder['folder_id']}")
+        keyboard_layout.append([folder_button])
 
-        button_row = []
-        if permission in ['owner', 'admin']:
-            button_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}"))
-            button_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_folder:{folder['folder_id']}"))
-        if permission == 'viewer':
-            button_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_folder:{folder['folder_id']}"))
-            button_row.append(InlineKeyboardButton("🗑️", callback_data=f"leave_item_prompt_folder:{folder['folder_id']}"))
-        if button_row:
-            keyboard_layout.append(button_row)
+        controls_row = []
+        if permission == 'owner':
+            controls_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}"))
+            controls_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_folder:{folder['folder_id']}"))
+        elif permission == 'admin':
+            controls_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_folder:{folder['folder_id']}"))
 
-    # أزرار التحكم (الإنشاء) - تظهر فقط للمالك والمشرف على القسم الحالي
+        if controls_row:
+            keyboard_layout.append(controls_row)
+
     current_section_permission = get_permission_level(user_id, 'section', section_id)
     if current_section_permission in ['owner', 'admin']:
         control_buttons = [
@@ -112,7 +115,6 @@ def build_section_view_keyboard(section_id: int, user_id: int) -> InlineKeyboard
         ]
         keyboard_layout.append(control_buttons)
     
-    # --- زر العودة الذكي ---
     section_details = get_section_details(section_id)
     parent_section_id = section_details['parent_section_id'] if section_details else None
     
