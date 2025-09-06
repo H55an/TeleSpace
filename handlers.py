@@ -222,12 +222,14 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
             details = database.get_section_details(content_id)
             item_name = details['section_name'] if details else ""
             text = f"🔗 *إعدادات مشاركة القسم: {escape_markdown(item_name, version=2)}*"
-            back_button_data = f"section:{content_id}"
+            parent_id = get_parent_section_id(content_id)
+            back_button_data = f"section:{parent_id}" if parent_id != 0 else "back_to_main"
         else: # folder
             details = database.get_folder_details(content_id)
             item_name = details['folder_name'] if details else ""
             text = f"🔗 *إعدادات مشاركة المجلد: {escape_markdown(item_name, version=2)}*"
-            back_button_data = f"folder:{content_id}" # Go back to folder view
+            parent_section_id = get_section_id_for_folder(content_id)
+            back_button_data = f"section:{parent_section_id}" if parent_section_id != 0 else "back_to_main"
 
         keyboard = [
             [InlineKeyboardButton("🤝 مشاركة (مشاهدة)", callback_data=f"generate_viewer_link:{content_type}:{content_id}")]
@@ -313,7 +315,8 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         folder_details = get_folder_details(folder_id)
         folder_name = folder_details['folder_name'] if folder_details else ""
         
-        back_button_data = f"folder:{folder_id}"
+        parent_section_id = get_section_id_for_folder(folder_id)
+        back_button_data = f"section:{parent_section_id}" if parent_section_id != 0 else "back_to_main"
         
         text = f"⚙️ *إعدادات المجلد: {escape_markdown(folder_name, version=2)}*"
 
