@@ -7,7 +7,7 @@ from telegram.helpers import escape_markdown
 
 import config
 import database
-from keyboards import build_main_menu_keyboard, build_section_view_keyboard
+from keyboards import build_my_space_keyboard, build_shared_spaces_keyboard, build_section_view_keyboard
 from constants import *
 from database import (
     get_folder_details, rename_folder, get_section_details, rename_section,
@@ -40,7 +40,6 @@ async def view_and_send_folder_contents(update: Update, context: ContextTypes.DE
 
     items_page, total_items = database.get_items_paginated(folder_id, limit=PAGE_SIZE, offset=offset)
     
-    # Always show a back button
     back_to_folder_button = InlineKeyboardButton("🔙 العودة إلى قائمة المجلد", callback_data=f"folder:{folder_id}")
 
     if not items_page and offset == 0:
@@ -122,22 +121,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         else:
             await update.message.reply_text("عذرًا، هذا الرابط غير صالح أو تم استخدامه بالفعل.")
 
-    keyboard = build_main_menu_keyboard(user.id)
-    # [تعديل] تم تهريب النقاط وتغيير النص ليتوافق مع MarkdownV2
+    # New Lobby Keyboard
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👤 مساحتي الخاصة", callback_data="my_space")],
+        [InlineKeyboardButton("🤝 المساحات المشتركة", callback_data="shared_spaces")]
+    ])
+    
     reply_text = """*مرحبًا بك في TeleSpace* \.
 
-مساحتك الخاصة على تيليجرام لبناء بيئتك المثالية وتخصيصها بنفسك ، وتخزين كل ما يهمك من المحتوى \(ملفات، رسائل، صور، وسائط\) بطريقة منظمة ومرنة \.
-
-🗂️ يمكنك إنشاء الأقسام والأقسام الفرعية \.
-📂 يمكنك إنشاء المجلدات وتخزين ملفاتك فيها \."""
+اختر من القائمة للبدء"""
     
     if update.callback_query:
-        try: 
-            # [تعديل] تغيير parse_mode إلى MarkdownV2
+        try:
             await update.callback_query.message.edit_text(reply_text, reply_markup=keyboard, parse_mode='MarkdownV2')
         except Exception: pass
     else:
-        # [تعديل] تغيير reply_html إلى reply_text مع parse_mode='MarkdownV2'
         await update.message.reply_text(reply_text, reply_markup=keyboard, parse_mode='MarkdownV2')
         
     return ConversationHandler.END
@@ -148,12 +146,20 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     data = query.data
 
-    if data.startswith("section:"):
+    if data == "my_space":
+        keyboard = build_my_space_keyboard(user_id)
+        await query.message.edit_text("👤 *مساحتي الخاصة*\n\nهنا تجد كل الأقسام والمجلدات التي تملكها\.", reply_markup=keyboard, parse_mode='MarkdownV2')
+    
+    elif data == "shared_spaces":
+        keyboard = build_shared_spaces_keyboard(user_id)
+        await query.message.edit_text("🤝 *المساحات المشتركة*\n\nهنا تجد كل الأقسام والمجلدات المشتركة معك\.", reply_markup=keyboard, parse_mode='MarkdownV2')
+
+    elif data.startswith("section:"):
         section_id = int(data.split(':')[1])
         permission = database.get_permission_level(user_id, 'section', section_id)
 
         if permission is None:
-            await query.answer("ليس لديك صلاحية للوصول إلى هذا القسم.", show_alert=True)
+            await query.answer("ليس لديك صلاحية للوصول إلى هذا القسم\.", show_alert=True)
             return
 
         section_details = database.get_section_details(section_id)
@@ -163,7 +169,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         if permission in ['owner', 'admin']:
             text = f"""📂 *قسم: {escape_markdown(section_name, version=2)}*
             
-            تصفح المحتويات وأضف أقسام/مجلدات أو استخدم `⚙️` للإدارة و `🔗` للمشاركة\."""
+            تصفح المحتويات وأضف أقسام/مجلدات أو استخدم `⚙️` للإدارة و `🔗` للمشاركة\n            """
         else: # viewer
             text = f"🔗 *أنت تتصفح: {escape_markdown(section_name, version=2)}*"
 
@@ -178,7 +184,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         permission = database.get_permission_level(user_id, 'folder', folder_id)
 
         if permission is None:
-            await query.answer("ليس لديك صلاحية للوصول إلى هذا المجلد.", show_alert=True)
+            await query.answer("ليس لديك صلاحية للوصول إلى هذا المجلد\.", show_alert=True)
             return
 
         folder_details = database.get_folder_details(folder_id)
@@ -192,9 +198,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         view_contents_button = InlineKeyboardButton(view_contents_button_text, callback_data=f"view_files:{folder_id}:0")
 
         if permission in ['owner', 'admin']:
-            text = f"""📁 *مجلد: {escape_markdown(folder_name, version=2)}*
-            
-            اختر الإجراء المطلوب\."""
+            text = f"📁 *مجلد: {escape_markdown(folder_name, version=2)}*\n            \n            اختر الإجراء المطلوب\."
             keyboard_layout.append([view_contents_button])
             keyboard_layout.append([InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_files_to:{folder_id}")])
         else: # viewer
@@ -275,10 +279,10 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         share_link = f"https://t.me/{bot_username}?start={token}"
         
         text = f"""🔗 *الرابط الدائم للمشاهدة*
-
-هذا هو الرابط الذي يمكنك مشاركته مع الآخرين لمنحهم صلاحية المشاهدة\.
-
-`{share_link}`"""
+        
+        هذا هو الرابط الذي يمكنك مشاركته مع الآخرين لمنحهم صلاحية المشاهدة\.
+        
+        `{share_link}`"""
         
         keyboard = [[InlineKeyboardButton("🔙 عودة إلى القائمة الرئيسية", callback_data="back_to_main")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='MarkdownV2')
@@ -291,6 +295,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         bot_username = (await context.bot.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={token}"
         text = f"""رابط دعوة مشرف يستخدم لمرة واحدة جاهز للمشاركة\:
+
         `{share_link}`"""
         await query.message.edit_text(text, parse_mode='MarkdownV2')
 
@@ -358,9 +363,21 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif data.startswith("delete_folder_confirm:"):
         folder_id = int(data.split(':')[1])
+        parent_section_id = get_section_id_for_folder(folder_id)
+        
         database.delete_folder(folder_id)
-        await query.answer("✅ تم حذف المجلد بنجاح!")
-        await start(update, context)
+        await query.answer("✅ تم حذف المجلد بنجاح!", show_alert=True)
+
+        if parent_section_id:
+            # Re-display the parent section
+            user_id = update.effective_user.id
+            section_details = database.get_section_details(parent_section_id)
+            section_name = section_details['section_name'] if section_details else "غير مسمى"
+            text = f"📂 *قسم: {escape_markdown(section_name, version=2)}*"
+            keyboard = build_section_view_keyboard(parent_section_id, user_id)
+            await query.message.edit_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
+        else:
+            await start(update, context)
 
     elif data.startswith("delete_section_prompt:"):
         section_id = int(data.split(':')[1])
@@ -373,9 +390,20 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif data.startswith("delete_section_confirm:"):
         section_id = int(data.split(':')[1])
+        parent_id = get_parent_section_id(section_id)
+        
         database.delete_section_recursively(section_id)
-        await query.answer("✅ تم حذف القسم وكل محتوياته بنجاح!")
-        await start(update, context)
+        await query.answer("✅ تم حذف القسم وكل محتوياته بنجاح!", show_alert=True)
+
+        if parent_id:
+            user_id = update.effective_user.id
+            section_details = database.get_section_details(parent_id)
+            section_name = section_details['section_name'] if section_details else "غير مسمى"
+            text = f"📂 *قسم: {escape_markdown(section_name, version=2)}*"
+            keyboard = build_section_view_keyboard(parent_id, user_id)
+            await query.message.edit_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
+        else:
+            await start(update, context)
 
     elif data.startswith("delete_all_prompt:"):
         folder_id = int(data.split(':')[1])
@@ -388,8 +416,20 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     elif data.startswith("delete_all_confirm:"):
         folder_id = int(data.split(':')[1])
+        parent_section_id = get_section_id_for_folder(folder_id)
+        
         deleted_count = database.delete_all_items_in_folder(folder_id)
-        await query.message.edit_text(f"✅ تم حذف {deleted_count} عنصر بنجاح. المجلد الآن فارغ.")
+        await query.answer(f"✅ تم حذف {deleted_count} عنصر بنجاح. المجلد الآن فارغ.", show_alert=True)
+
+        if parent_section_id:
+            user_id = update.effective_user.id
+            section_details = database.get_section_details(parent_section_id)
+            section_name = section_details['section_name'] if section_details else "غير مسمى"
+            text = f"📂 *قسم: {escape_markdown(section_name, version=2)}*"
+            keyboard = build_section_view_keyboard(parent_section_id, user_id)
+            await query.message.edit_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
+        else:
+            await start(update, context)
     
     elif data.startswith("leave_item_prompt_"):
         parts = data.split(':')
@@ -423,14 +463,12 @@ async def new_section_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE)
     parent_id = int(data.split(':')[1]) if data.startswith("new_section_sub:") else None
     context.user_data['parent_section_id'] = parent_id
 
-    # --- [تعديل وراثة الملكية] ---
     owner_id = user_id
     if parent_id:
         parent_section_details = database.get_section_details(parent_id)
         if parent_section_details:
             owner_id = parent_section_details['user_id']
     context.user_data['owner_id'] = owner_id
-    # --- نهاية التعديل ---
 
     await query.message.edit_text(text="يرجى إرسال اسم القسم الجديد:")
     return AWAITING_SECTION_NAME
@@ -438,14 +476,25 @@ async def new_section_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def receive_section_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     section_name = update.message.text
     parent_id = context.user_data.get('parent_section_id')
-    # --- [تعديل وراثة الملكية] ---
     owner_id = context.user_data.get('owner_id')
-    # --- نهاية التعديل ---
 
     database.add_section(user_id=owner_id, section_name=section_name, parent_section_id=parent_id)
     await update.message.reply_text(f"✅ تم إنشاء قسم '{section_name}' بنجاح!")
+    
+    parent_id_for_nav = context.user_data.get('parent_section_id')
     context.user_data.clear()
-    await start(update, context)
+
+    if parent_id_for_nav:
+        user_id = update.effective_user.id
+        section_details = database.get_section_details(parent_id_for_nav)
+        section_name = section_details['section_name'] if section_details else "غير مسمى"
+        
+        text = f"📂 *قسم: {escape_markdown(section_name, version=2)}*"
+        keyboard = build_section_view_keyboard(parent_id_for_nav, user_id)
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
+    else:
+        await start(update, context)
+        
     return ConversationHandler.END
 
 async def new_folder_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -457,14 +506,12 @@ async def new_folder_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     parent_section_id = int(data.split(':')[1]) if data.startswith("new_folder_in_sec:") else None
     context.user_data['parent_section_id_for_folder'] = parent_section_id
 
-    # --- [تعديل وراثة الملكية] ---
     owner_id = user_id
     if parent_section_id:
         parent_section_details = database.get_section_details(parent_section_id)
         if parent_section_details:
             owner_id = parent_section_details['user_id']
     context.user_data['owner_id'] = owner_id
-    # --- نهاية التعديل ---
 
     await query.message.edit_text(text="يرجى إرسال اسم المجلد الجديد:")
     return AWAITING_FOLDER_NAME
@@ -472,13 +519,26 @@ async def new_folder_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def receive_folder_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     folder_name = update.message.text
     parent_section_id = context.user_data.get('parent_section_id_for_folder')
-    # --- [تعديل وراثة الملكية] ---
     owner_id = context.user_data.get('owner_id')
-    # --- نهاية التعديل ---
 
     database.add_folder(owner_user_id=owner_id, folder_name=folder_name, section_id=parent_section_id)
     await update.message.reply_text(f"✅ تم إنشاء مجلد '{folder_name}' بنجاح!")
-    context.user_data.clear(); await start(update, context); return ConversationHandler.END
+
+    parent_id_for_nav = context.user_data.get('parent_section_id_for_folder')
+    context.user_data.clear()
+
+    if parent_id_for_nav:
+        user_id = update.effective_user.id
+        section_details = database.get_section_details(parent_id_for_nav)
+        section_name = section_details['section_name'] if section_details else "غير مسمى"
+        
+        text = f"📂 *قسم: {escape_markdown(section_name, version=2)}*"
+        keyboard = build_section_view_keyboard(parent_id_for_nav, user_id)
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
+    else:
+        await start(update, context)
+        
+    return ConversationHandler.END
 
 async def add_files_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query; await query.answer(); folder_id = int(query.data.split(':')[1])
@@ -540,8 +600,19 @@ async def receive_new_folder_name(update: Update, context: ContextTypes.DEFAULT_
     
     await update.message.reply_text(f"✅ تم تغيير اسم المجلد بنجاح إلى: {new_name}")
     
+    parent_section_id = get_section_id_for_folder(folder_id)
     context.user_data.clear()
-    await start(update, context)
+
+    if parent_section_id:
+        user_id = update.effective_user.id
+        section_details = database.get_section_details(parent_section_id)
+        section_name = section_details['section_name'] if section_details else "غير مسمى"
+        text = f"📂 *قسم: {escape_markdown(section_name, version=2)}*"
+        keyboard = build_section_view_keyboard(parent_section_id, user_id)
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
+    else:
+        await start(update, context)
+        
     return ConversationHandler.END
 
 async def rename_section_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -574,8 +645,19 @@ async def receive_new_section_name(update: Update, context: ContextTypes.DEFAULT
     
     await update.message.reply_text(f"✅ تم تغيير اسم القسم بنجاح إلى: {new_name}")
     
+    parent_id = get_parent_section_id(section_id)
     context.user_data.clear()
-    await start(update, context)
+
+    if parent_id:
+        user_id = update.effective_user.id
+        section_details = database.get_section_details(parent_id)
+        section_name = section_details['section_name'] if section_details else "غير مسمى"
+        text = f"📂 *قسم: {escape_markdown(section_name, version=2)}*"
+        keyboard = build_section_view_keyboard(parent_id, user_id)
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
+    else:
+        await start(update, context)
+        
     return ConversationHandler.END
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
