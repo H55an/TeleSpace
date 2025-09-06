@@ -534,19 +534,43 @@ def deactivate_share_link(token: str):
         if conn:
             conn.close()
 
-def grant_permission(user_id: int, content_type: str, content_id: int, permission_level: str):
-    """تمنح صلاحية لمستخدم على عنصر معين."""
+def grant_permission(user_id: int, content_type: str, content_id: int, new_permission_level: str):
+    """
+    Grants or upgrades a user's permission on a specific item.
+    - Inserts a new permission if one doesn't exist.
+    - Upgrades from 'viewer' to 'admin'.
+    - Does NOT downgrade from 'admin' to 'viewer'.
+    """
+    conn = None
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
-        # التأكد من عدم وجود الصلاحية مسبقًا لتجنب التكرار
-        cursor.execute("SELECT permission_id FROM permissions WHERE user_id = ? AND content_type = ? AND content_id = ?", (user_id, content_type, content_id))
-        if not cursor.fetchone():
+
+        # Check for existing permission
+        cursor.execute(
+            "SELECT permission_level FROM permissions WHERE user_id = ? AND content_type = ? AND content_id = ?",
+            (user_id, content_type, content_id)
+        )
+        result = cursor.fetchone()
+
+        if result:
+            # Permission exists, check if it's an upgrade
+            current_permission_level = result[0]
+            if new_permission_level == 'admin' and current_permission_level == 'viewer':
+                # Upgrade from viewer to admin
+                cursor.execute(
+                    "UPDATE permissions SET permission_level = ? WHERE user_id = ? AND content_type = ? AND content_id = ?",
+                    (new_permission_level, user_id, content_type, content_id)
+                )
+        else:
+            # No permission exists, insert a new one
             cursor.execute(
                 "INSERT INTO permissions (user_id, content_type, content_id, permission_level) VALUES (?, ?, ?, ?)",
-                (user_id, content_type, content_id, permission_level)
+                (user_id, content_type, content_id, new_permission_level)
             )
-            conn.commit()
+            
+        conn.commit()
+
     except sqlite3.Error as e:
         print(f"DB Error in grant_permission: {e}")
     finally:

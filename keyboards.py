@@ -50,7 +50,7 @@ def build_my_space_keyboard(user_id: int) -> InlineKeyboardMarkup:
     keyboard_layout.append(control_buttons)
     
     # Add back button to the main lobby
-    keyboard_layout.append([InlineKeyboardButton("🔙 العودة إلى البداية", callback_data="back_to_main")])
+    keyboard_layout.append([InlineKeyboardButton("🔙 عودة", callback_data="back_to_main")])
     
     return InlineKeyboardMarkup(keyboard_layout)
 
