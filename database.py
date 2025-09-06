@@ -381,6 +381,44 @@ def get_section_details(section_id: int):
         if conn:
             conn.close()
 
+def get_parent_section_id(section_id: int) -> int | None:
+    """
+    [جديد] يجلب معرّف القسم الأب (parent) لقسم معين.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("SELECT parent_section_id FROM sections WHERE section_id = ?", (section_id,))
+        result = cursor.fetchone()
+        if result and result[0] is not None:
+            return result[0]
+        return 0 # نعود للرئيسية إذا لم يكن هناك أب
+    except sqlite3.Error as e:
+        print(f"DB Error in get_parent_section_id: {e}")
+        return 0
+    finally:
+        if conn:
+            conn.close()
+
+def get_section_id_for_folder(folder_id: int) -> int:
+    """
+    [جديد] يجلب معرّف القسم الذي ينتمي إليه مجلد معين.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("SELECT section_id FROM folders WHERE folder_id = ?", (folder_id,))
+        result = cursor.fetchone()
+        if result and result[0] is not None:
+            return result[0]
+        return 0 # نعود للرئيسية إذا كان المجلد في الجذر
+    except sqlite3.Error as e:
+        print(f"DB Error in get_section_id_for_folder: {e}")
+        return 0
+    finally:
+        if conn:
+            conn.close()
+
 def rename_section(section_id: int, new_name: str):
     try:
         conn = sqlite3.connect(DB_NAME)

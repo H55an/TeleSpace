@@ -8,7 +8,9 @@ from database import (
     get_folders_in_section,
     get_section_details,
     get_permission_level,
-    has_direct_permission
+    has_direct_permission,
+    get_parent_section_id,
+    get_section_id_for_folder
 )
 
 def build_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
@@ -116,9 +118,9 @@ def build_section_view_keyboard(section_id: int, user_id: int) -> InlineKeyboard
         keyboard_layout.append(control_buttons)
     
     section_details = get_section_details(section_id)
-    parent_section_id = section_details['parent_section_id'] if section_details else None
+    parent_section_id = get_parent_section_id(section_id)
     
-    if parent_section_id:
+    if parent_section_id != 0:
         back_button = InlineKeyboardButton("🔙 عودة", callback_data=f"section:{parent_section_id}")
     else:
         back_button = InlineKeyboardButton("🔙 عودة", callback_data="back_to_main")

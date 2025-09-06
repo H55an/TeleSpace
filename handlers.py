@@ -12,7 +12,8 @@ from constants import *
 from database import (
     get_folder_details, rename_folder, get_section_details, rename_section,
     create_share_link, get_share_by_token, deactivate_share_link, grant_permission,
-    get_permission_level, get_or_create_viewer_share_link, revoke_permission
+    get_permission_level, get_or_create_viewer_share_link, revoke_permission,
+    get_parent_section_id, get_section_id_for_folder
 )
 
 # --- الدوال المساعدة ---
@@ -39,8 +40,13 @@ async def view_and_send_folder_contents(update: Update, context: ContextTypes.DE
 
     items_page, total_items = database.get_items_paginated(folder_id, limit=PAGE_SIZE, offset=offset)
     
+    # Always show a back button
+    back_to_folder_button = InlineKeyboardButton("🔙 العودة إلى قائمة المجلد", callback_data=f"folder:{folder_id}")
+
     if not items_page and offset == 0:
         await context.bot.send_message(chat_id, "هذا المجلد فارغ.")
+        keyboard = [[back_to_folder_button]]
+        await context.bot.send_message(chat_id, "يمكنك إضافة عناصر من قائمة المجلد.", reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
     if not items_page:
@@ -72,11 +78,16 @@ async def view_and_send_folder_contents(update: Update, context: ContextTypes.DE
             await context.bot.send_message(chat_id, f"لم يتم إرسال العنصر '{item['item_name']}'. الخطأ: {e}")
             
     new_offset = offset + len(items_page)
+
     if new_offset < total_items:
-        next_keyboard = [[InlineKeyboardButton(f"📥 عرض الـ {min(PAGE_SIZE, total_items - new_offset)} عناصر التالية", callback_data=f"view_files:{folder_id}:{new_offset}")]]
+        next_keyboard = [
+            [InlineKeyboardButton(f"📥 عرض الـ {min(PAGE_SIZE, total_items - new_offset)} عناصر التالية", callback_data=f"view_files:{folder_id}:{new_offset}")],
+            [back_to_folder_button]
+        ]
         await context.bot.send_message(chat_id, "لا يزال هناك المزيد من العناصر.", reply_markup=InlineKeyboardMarkup(next_keyboard))
     else:
-        await context.bot.send_message(chat_id, "تم عرض كل العناصر في هذا المجلد.")
+        final_keyboard = [[back_to_folder_button]]
+        await context.bot.send_message(chat_id, "تم عرض كل العناصر في هذا المجلد.", reply_markup=InlineKeyboardMarkup(final_keyboard))
 
 # --- دوال الواجهة الرئيسية والتصفح ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -172,7 +183,6 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         folder_details = database.get_folder_details(folder_id)
         folder_name = folder_details['folder_name'] if folder_details else "غير مسمى"
-        section_id = folder_details['section_id'] if folder_details else None
 
         text = ""
         keyboard_layout = []
@@ -191,7 +201,8 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
             text = f"🔗 *مجلد: {escape_markdown(folder_name, version=2)}*"
             keyboard_layout.append([view_contents_button])
 
-        back_button_data = f"section:{section_id}" if section_id else "back_to_main"
+        parent_section_id = get_section_id_for_folder(folder_id)
+        back_button_data = f"section:{parent_section_id}" if parent_section_id != 0 else "back_to_main"
         keyboard_layout.append([InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)])
         
         await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard_layout), parse_mode='MarkdownV2')
@@ -285,8 +296,8 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         section_id = int(data.split(':')[1])
         section_details = get_section_details(section_id)
         section_name = section_details['section_name'] if section_details else ""
-        parent_id = section_details['parent_section_id'] if section_details else None
-        back_button_data = f"section:{parent_id}" if parent_id else "back_to_main"
+        parent_id = get_parent_section_id(section_id)
+        back_button_data = f"section:{parent_id}" if parent_id != 0 else "back_to_main"
         
         text = f"⚙️ *إعدادات القسم: {escape_markdown(section_name, version=2)}*"
 
