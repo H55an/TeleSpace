@@ -47,8 +47,10 @@ def main() -> None:
     upload_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(handlers.add_files_start, pattern="^add_files_to:")],
         states={
-            # في هذه الحالة، نستمع لأي نوع من الرسائل (ملفات، نصوص، صور، الخ) طالما أنها ليست أمرًا
-            AWAITING_FILES_FOR_UPLOAD: [MessageHandler(filters.ALL & ~filters.COMMAND, handlers.collect_files_and_save)]
+            AWAITING_FILES_FOR_UPLOAD: [
+                CommandHandler("done", handlers.save_files),
+                MessageHandler(filters.ALL & ~filters.COMMAND, handlers.collect_files)
+            ]
         },
         fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
     )

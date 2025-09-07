@@ -562,37 +562,51 @@ async def receive_folder_name(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def add_files_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query; await query.answer(); folder_id = int(query.data.split(':')[1])
     context.user_data['target_folder_id'] = folder_id
-    await query.message.edit_text(text="أنت الآن في وضع الإضافة.\nأرسل أي عدد من العناصر. عندما تنتهي، أرسل كلمة `حفظ`.")
+    await query.message.edit_text(text="""أنت الآن في وضع الإضافة.
+                                  
+                                  أرسل أي عدد من العناصر. عندما تنتهي، أرسل الأمر /done \.""")
     return AWAITING_FILES_FOR_UPLOAD
 
-async def collect_files_and_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    message_text = update.message.text
-    if message_text and message_text.lower() == "حفظ":
-        target_folder_id = context.user_data.get('target_folder_id')
-        message_buffer = context.user_data.get('files_to_add_buffer', [])
-        if not message_buffer:
-            await update.message.reply_text("لم يتم إرسال أي عناصر للحفظ.")
-            await return_to_section(update, context, get_section_id_for_folder(target_folder_id))
-            context.user_data.clear()
-            return ConversationHandler.END
-        await update.message.reply_text(f"جاري حفظ {len(message_buffer)} عنصر...")
-        count = 0
-        for msg in message_buffer:
-            item_info = await process_message_for_saving(msg)
-            if item_info:
-                database.add_item(
-                    folder_id=target_folder_id, item_name=item_info['item_name'], item_type=item_info['item_type'],
-                    content=item_info['content'], file_unique_id=item_info['file_unique_id'], file_id=item_info['file_id']
-                )
-                count += 1
-        await update.message.reply_text(f"✅ تم حفظ {count} عنصر بنجاح!")
+async def collect_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if 'files_to_add_buffer' not in context.user_data:
+        context.user_data['files_to_add_buffer'] = []
+    context.user_data['files_to_add_buffer'].append(update.message)
+    await update.message.reply_text("👍 تم استلام العنصر. أرسل المزيد أو نفذ الأمر /done للحفظ.")
+    return AWAITING_FILES_FOR_UPLOAD
+
+async def save_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    target_folder_id = context.user_data.get('target_folder_id')
+    message_buffer = context.user_data.get('files_to_add_buffer', [])
+    if not message_buffer:
+        await update.message.reply_text("لم يتم إرسال أي عناصر للحفظ.")
+        # Attempt to return to the correct section, requires folder_id to be in user_data
+        if target_folder_id:
+            parent_section_id = get_section_id_for_folder(target_folder_id)
+            if parent_section_id:
+                await return_to_section(update, context, parent_section_id)
         context.user_data.clear()
-        await return_to_section(update, context, get_section_id_for_folder(target_folder_id))
         return ConversationHandler.END
-    else:
-        context.user_data.get('files_to_add_buffer', []).append(update.message)
-        await update.message.reply_text("👍 تم الاستلام. أرسل المزيد أو أرسل `حفظ`.")
-        return AWAITING_FILES_FOR_UPLOAD
+
+    await update.message.reply_text(f"جاري حفظ {len(message_buffer)} عنصر...")
+    count = 0
+    for msg in message_buffer:
+        item_info = await process_message_for_saving(msg)
+        if item_info:
+            database.add_item(
+                folder_id=target_folder_id, item_name=item_info['item_name'], item_type=item_info['item_type'],
+                content=item_info['content'], file_unique_id=item_info['file_unique_id'], file_id=item_info['file_id']
+            )
+            count += 1
+    await update.message.reply_text(f"✅ تم حفظ {count} عنصر بنجاح!")
+    
+    # Return to the parent section after saving
+    if target_folder_id:
+        parent_section_id = get_section_id_for_folder(target_folder_id)
+        if parent_section_id:
+            await return_to_section(update, context, parent_section_id)
+
+    context.user_data.clear()
+    return ConversationHandler.END
 
 async def rename_folder_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
