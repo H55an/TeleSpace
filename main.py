@@ -16,70 +16,46 @@ import handlers
 
 def main() -> None:
     """
-    نقطة انطلاق البوت. تقوم بإنشاء التطبيق، تسجيل المعالجات، وتشغيل البوت.
+    [معدل] نقطة انطلاق البوت مع المعالجات الموحدة.
     """
     # 1. إنشاء التطبيق
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
 
     # 2. إعداد وتسجيل المعالجات (Handlers)
 
-    # معالج محادثة إنشاء قسم (يبقى كما هو)
-    section_conv = ConversationHandler(
+    # معالج محادثة موحد لإنشاء الحاويات (أقسام ومجلدات)
+    create_container_conv = ConversationHandler(
         entry_points=[
-            CallbackQueryHandler(handlers.new_section_prompt, pattern="^new_section_root$"),
-            CallbackQueryHandler(handlers.new_section_prompt, pattern="^new_section_sub:")
+            CallbackQueryHandler(handlers.new_container_prompt, pattern="^new_container_root:"),
+            CallbackQueryHandler(handlers.new_container_prompt, pattern="^new_container_sub:")
         ],
-        states={AWAITING_SECTION_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_section_name)]},
+        states={AWAITING_CONTAINER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_container_name)]},
         fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
     )
 
-    # معالج محادثة إنشاء مجلد (يبقى كما هو)
-    folder_conv = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(handlers.new_folder_prompt, pattern="^new_folder_root$"),
-            CallbackQueryHandler(handlers.new_folder_prompt, pattern="^new_folder_in_sec:")
-        ],
-        states={AWAITING_FOLDER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_folder_name)]},
+    # معالج محادثة موحد لإعادة تسمية الحاويات
+    rename_container_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(handlers.rename_container_prompt, pattern="^rename_container:")],
+        states={AWAITING_RENAME_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_new_container_name)]},
         fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
     )
 
-    # #[التغيير الرئيسي هنا]: محادثة إضافة الملفات الموجهة الجديدة
-    upload_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(handlers.add_files_start, pattern="^add_files_to:")],
+    # معالج محادثة إضافة العناصر إلى مجلد
+    add_items_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(handlers.add_items_start, pattern="^add_items:")],
         states={
-            AWAITING_FILES_FOR_UPLOAD: [
-                CommandHandler("done", handlers.save_files),
-                MessageHandler(filters.ALL & ~filters.COMMAND, handlers.collect_files)
+            AWAITING_ITEMS_FOR_UPLOAD: [
+                CommandHandler("done", handlers.save_items),
+                MessageHandler(filters.ALL & ~filters.COMMAND, handlers.collect_items)
             ]
         },
         fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
     )
 
-    # معالج محادثة إعادة تسمية المجلد
-    rename_folder_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(handlers.rename_folder_prompt, pattern="^rename_folder_prompt:")],
-        states={
-            AWAITING_RENAME_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_new_folder_name)]
-        },
-        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
-    )
-
-    # معالج محادثة إعادة تسمية القسم
-    rename_section_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(handlers.rename_section_prompt, pattern="^rename_section_prompt:")],
-        states={
-            AWAITING_RENAME_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_new_section_name)]
-        },
-        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
-    )
-
     # تسجيل كل المعالجات في التطبيق
-    # يتم تسجيل المحادثات أولاً لتكون لها الأولوية في التقاط التحديثات
-    application.add_handler(section_conv)
-    application.add_handler(folder_conv)
-    application.add_handler(upload_conv) # <-- تسجيل المحادثة الجديدة
-    application.add_handler(rename_folder_conv)
-    application.add_handler(rename_section_conv)
+    application.add_handler(create_container_conv)
+    application.add_handler(rename_container_conv)
+    application.add_handler(add_items_conv)
     
     # ثم يتم تسجيل الأوامر والمعالج العام للأزرار
     application.add_handler(CommandHandler("start", handlers.start))

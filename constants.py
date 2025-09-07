@@ -1,9 +1,8 @@
 PAGE_SIZE = 10
 
-# AWAITING_...
+# Conversation states
 (
-    AWAITING_SECTION_NAME, 
-    AWAITING_FOLDER_NAME, 
-    AWAITING_FILES_FOR_UPLOAD, # <-- الحالة الجديدة
-    AWAITING_RENAME_INPUT
-) = range(4)
+    AWAITING_CONTAINER_NAME,    # For creating new sections or folders
+    AWAITING_RENAME_INPUT,      # For renaming any container
+    AWAITING_ITEMS_FOR_UPLOAD   # For uploading items to a folder
+) = range(3)
