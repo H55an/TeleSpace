@@ -11,7 +11,8 @@ from database import (
     has_direct_permission,
     get_parent_section_id,
     get_section_id_for_folder,
-    get_folder_details
+    get_folder_details,
+    get_back_navigation
 )
 
 def build_my_space_keyboard(user_id: int) -> InlineKeyboardMarkup:
@@ -135,17 +136,8 @@ def build_section_view_keyboard(section_id: int, user_id: int) -> InlineKeyboard
         ]
         keyboard_layout.append(control_buttons)
     
-    parent_section_id = get_parent_section_id(section_id)
-    
-    if parent_section_id != 0:
-        back_button = InlineKeyboardButton("🔙 رجوع", callback_data=f"section:{parent_section_id}")
-    else:
-        section_details = get_section_details(section_id)
-        if section_details and section_details['user_id'] == user_id:
-            back_button = InlineKeyboardButton("🔙 رجوع", callback_data="my_space")
-        else:
-            back_button = InlineKeyboardButton("🔙 رجوع", callback_data="shared_spaces")
-        
+    back_button_data = get_back_navigation(user_id, 'section', section_id)
+    back_button = InlineKeyboardButton("🔙 رجوع", callback_data=back_button_data)
     keyboard_layout.append([back_button])
     
     return InlineKeyboardMarkup(keyboard_layout)

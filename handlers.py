@@ -13,7 +13,7 @@ from database import (
     get_folder_details, rename_folder, get_section_details, rename_section,
     create_share_link, get_share_by_token, deactivate_share_link, grant_permission,
     get_permission_level, get_or_create_viewer_share_link, revoke_permission,
-    get_parent_section_id, get_section_id_for_folder
+    get_parent_section_id, get_section_id_for_folder, get_back_navigation
 )
 
 # --- Helper Functions ---
@@ -21,7 +21,8 @@ from database import (
 async def return_to_my_space(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Navigates the user to their private space."""
     keyboard = build_my_space_keyboard(update.effective_user.id)
-    text = """👤 *مساحتك الخاصة*
+    text = """
+    👤 *مساحتك الخاصة*
 
     تصفح أقسامك ومجلداتك، أو أنشئ جديدًا\.
     """
@@ -33,7 +34,8 @@ async def return_to_my_space(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def return_to_shared_spaces(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Navigates the user to the shared spaces view."""
     keyboard = build_shared_spaces_keyboard(update.effective_user.id)
-    text = """🤝 *المساحات المشتركة*
+    text = """
+    🤝 *المساحات المشتركة*
 
     تصفح الأقسام والمجلدات المشتركة معك \.
     """
@@ -47,9 +49,10 @@ async def return_to_section(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     user_id = update.effective_user.id
     section_details = database.get_section_details(section_id)
     section_name = section_details['section_name'] if section_details else "غير مسمى"
-    text = f"""📂 *قسم: {escape_markdown(section_name, version=2)}*
+    text = f"""
+    📂 *قسم: {escape_markdown(section_name, version=2)}*
 
-تصفح، أضف، أو قم بإدارة المحتويات\.
+    تصفح، أضف، أو قم بإدارة المحتويات\.
     """
     keyboard = build_section_view_keyboard(section_id, user_id)
     if update.callback_query:
@@ -166,7 +169,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         [InlineKeyboardButton("🤝 المساحات المشتركة", callback_data="shared_spaces")]
     ])
     
-    reply_text = """*مرحبًا بك في TeleSpace* \.
+    reply_text = """
+*مرحبًا بك في TeleSpace* \.
 
 اختر من القائمة للبدء"""
     
@@ -217,25 +221,19 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         view_contents_button = InlineKeyboardButton(view_contents_button_text, callback_data=f"view_files:{folder_id}:0")
 
         if permission in ['owner', 'admin']:
-            text = f"""📁 *مجلد: {escape_markdown(folder_name, version=2)}*
+            text = f"""
+    📁 *مجلد: {escape_markdown(folder_name, version=2)}*
 
-            اختر إجراءً أو تصفح المحتويات\.
-            """
+    اختر إجراءً أو تصفح المحتويات\.
+    """
             keyboard_layout.append([view_contents_button])
             keyboard_layout.append([InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_files_to:{folder_id}")])
         else: # viewer
             text = f"🔗 *مجلد: {escape_markdown(folder_name, version=2)}*"
             keyboard_layout.append([view_contents_button])
 
-        parent_section_id = get_section_id_for_folder(folder_id)
-        if parent_section_id != 0:
-            back_button = InlineKeyboardButton("🔙 عودة", callback_data=f"section:{parent_section_id}")
-        else:
-            if folder_details and folder_details['owner_user_id'] == user_id:
-                back_button = InlineKeyboardButton("🔙 عودة", callback_data="my_space")
-            else:
-                back_button = InlineKeyboardButton("🔙 عودة", callback_data="shared_spaces")
-        keyboard_layout.append([back_button])
+        back_button_data = database.get_back_navigation(user_id, 'folder', folder_id)
+        keyboard_layout.append([InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)])
         
         await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard_layout), parse_mode='MarkdownV2')
 
@@ -247,26 +245,14 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         permission = database.get_permission_level(user_id, content_type, content_id)
 
         text = ""
-        back_button_data = ""
-
         if content_type == 'section':
             details = database.get_section_details(content_id)
             item_name = details['section_name'] if details else ""
             text = f"🔗 *مشاركة قسم: {escape_markdown(item_name, version=2)}*"
-            parent_id = get_parent_section_id(content_id)
-            if parent_id != 0:
-                back_button_data = f"section:{parent_id}"
-            else:
-                back_button_data = "my_space" if details and details['user_id'] == user_id else "shared_spaces"
         else: # folder
             details = database.get_folder_details(content_id)
             item_name = details['folder_name'] if details else ""
             text = f"🔗 *مشاركة مجلد: {escape_markdown(item_name, version=2)}*"
-            parent_section_id = get_section_id_for_folder(content_id)
-            if parent_section_id != 0:
-                back_button_data = f"section:{parent_section_id}"
-            else:
-                back_button_data = "my_space" if details and details['owner_user_id'] == user_id else "shared_spaces"
 
         keyboard = [
             [InlineKeyboardButton("🤝 مشاركة (مشاهدة)", callback_data=f"generate_viewer_link:{content_type}:{content_id}")]
@@ -275,6 +261,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         if permission == 'owner':
             keyboard.append([InlineKeyboardButton("👑 إضافة مشرف", callback_data=f"generate_admin_link:{content_type}:{content_id}")])
 
+        back_button_data = database.get_back_navigation(user_id, content_type, content_id)
         keyboard.append([InlineKeyboardButton("🔙 عودة", callback_data=back_button_data)])
         
         await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='MarkdownV2')
@@ -286,7 +273,8 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         token = database.get_or_create_viewer_share_link(user_id, content_type, content_id)
         bot_username = (await context.bot.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={token}"
-        text = f"""✅ رابط المشاركة \(مشاهدة فقط\) انقر عليه نقرة واحدة لنسخه:
+        text = f"""✅ رابط المشاركة \(مشاهدة فقط\):
+        _انقر عليه نقرة واحدة لنسخه_
 
         `{share_link}`"""
         
@@ -348,14 +336,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         section_id = int(data.split(':')[1])
         section_details = get_section_details(section_id)
         section_name = section_details['section_name'] if section_details else ""
-        parent_id = get_parent_section_id(section_id)
-        if parent_id != 0:
-            back_button_data = f"section:{parent_id}"
-        else:
-            if section_details and section_details['user_id'] == user_id:
-                back_button_data = "my_space"
-            else:
-                back_button_data = "shared_spaces"
+        back_button_data = database.get_back_navigation(user_id, 'section', section_id)
         
         text = f"⚙️ *إعدادات قسم: {escape_markdown(section_name, version=2)}*"
 
@@ -370,15 +351,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         folder_id = int(data.split(':')[1])
         folder_details = get_folder_details(folder_id)
         folder_name = folder_details['folder_name'] if folder_details else ""
-        
-        parent_section_id = get_section_id_for_folder(folder_id)
-        if parent_section_id != 0:
-            back_button_data = f"section:{parent_section_id}"
-        else:
-            if folder_details and folder_details['owner_user_id'] == user_id:
-                back_button_data = "my_space"
-            else:
-                back_button_data = "shared_spaces"
+        back_button_data = database.get_back_navigation(user_id, 'folder', folder_id)
         
         text = f"⚙️ *إعدادات مجلد: {escape_markdown(folder_name, version=2)}*"
 
@@ -581,7 +554,8 @@ async def receive_folder_name(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def add_files_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query; await query.answer(); folder_id = int(query.data.split(':')[1])
     context.user_data['target_folder_id'] = folder_id
-    await query.message.edit_text(text="""➕ *وضع الإضافة*
+    await query.message.edit_text(text="""
+➕ *وضع الإضافة*
 
 أرسل ملفاتك، صورك، أو رسائلك. عند الانتهاء، اضغط /done لحفظها.""")
     return AWAITING_FILES_FOR_UPLOAD
@@ -596,34 +570,28 @@ async def collect_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def save_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     target_folder_id = context.user_data.get('target_folder_id')
     message_buffer = context.user_data.get('files_to_add_buffer', [])
-    if not message_buffer:
-        await update.message.reply_text("⚠️ لم ترسل أي عناصر ليتم حفظها.")
-        # Attempt to return to the correct section, requires folder_id to be in user_data
-        if target_folder_id:
-            parent_section_id = get_section_id_for_folder(target_folder_id)
-            if parent_section_id:
-                await return_to_section(update, context, parent_section_id)
-        context.user_data.clear()
-        return ConversationHandler.END
 
-    await update.message.reply_text(f"📥 جاري حفظ {len(message_buffer)} عنصر...")
-    count = 0
-    for msg in message_buffer:
-        item_info = await process_message_for_saving(msg)
-        if item_info:
-            database.add_item(
-                folder_id=target_folder_id, item_name=item_info['item_name'], item_type=item_info['item_type'],
-                content=item_info['content'], file_unique_id=item_info['file_unique_id'], file_id=item_info['file_id']
-            )
-            count += 1
-    await update.message.reply_text(f"✅ تم حفظ {count} عنصر بنجاح!")
-    
-    # Return to the parent section after saving
+    # Define the back button to the folder menu
+    back_to_folder_keyboard = None
     if target_folder_id:
-        parent_section_id = get_section_id_for_folder(target_folder_id)
-        if parent_section_id:
-            await return_to_section(update, context, parent_section_id)
+        back_button = InlineKeyboardButton("🔙 العودة إلى قائمة المجلد", callback_data=f"folder:{target_folder_id}")
+        back_to_folder_keyboard = InlineKeyboardMarkup([[back_button]])
 
+    if not message_buffer:
+        await update.message.reply_text("⚠️ لم ترسل أي عناصر ليتم حفظها. الخروج من وضع الإضافة.", reply_markup=back_to_folder_keyboard)
+    else:
+        await update.message.reply_text(f"📥 جاري حفظ {len(message_buffer)} عنصر...")
+        count = 0
+        for msg in message_buffer:
+            item_info = await process_message_for_saving(msg)
+            if item_info:
+                database.add_item(
+                    folder_id=target_folder_id, item_name=item_info['item_name'], item_type=item_info['item_type'],
+                    content=item_info['content'], file_unique_id=item_info['file_unique_id'], file_id=item_info['file_id']
+                )
+                count += 1
+        await update.message.reply_text(f"✅ تم حفظ {count} عنصر بنجاح!", reply_markup=back_to_folder_keyboard)
+    
     context.user_data.clear()
     return ConversationHandler.END
 

@@ -659,3 +659,46 @@ def revoke_permission(user_id: int, content_type: str, content_id: int):
     finally:
         if conn:
             conn.close()
+
+def get_back_navigation(user_id: int, content_type: str, content_id: int) -> str:
+    """
+    Determines the correct callback data for a 'back' button.
+    For non-owners, it checks for parent visibility before creating a link to it.
+    """
+    is_owner = False
+    parent_id = None
+    parent_type = 'section'  # The parent of a folder or section is always a section
+
+    details = None
+    if content_type == 'folder':
+        details = get_folder_details(content_id)
+        if not details: return "my_space" # Fallback
+        is_owner = details['owner_user_id'] == user_id
+        parent_id = get_section_id_for_folder(content_id)
+
+    elif content_type == 'section':
+        details = get_section_details(content_id)
+        if not details: return "my_space" # Fallback
+        is_owner = details['user_id'] == user_id
+        parent_id = get_parent_section_id(content_id)
+
+    if parent_id and parent_id != 0:
+        # It's a sub-item.
+        if is_owner:
+            # Owners can always go back.
+            return f"{parent_type}:{parent_id}"
+        else:
+            # Non-owner, check permission on the parent.
+            parent_permission = get_permission_level(user_id, parent_type, parent_id)
+            if parent_permission:
+                return f"{parent_type}:{parent_id}"
+            else:
+                # No permission on parent, go to the main shared list.
+                return "shared_spaces"
+    else:
+        # It's a root item.
+        if is_owner:
+            return "my_space"
+        else:
+            # A non-owner looking at a root shared item should go back to the shared list.
+            return "shared_spaces"
