@@ -154,7 +154,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             else:
                  await update.message.reply_text("⚠️ عذرًا، المحتوى المشار إليه لم يعد موجودًا\.")
         else:
-            await update.message.reply_text("⚠️ عذرًا، الرابط غير صالح أو مستخدم\.")
+            await update.message.reply_text("⚠️ عذرًا، الرابط غير صالح أو مستخدم.")
 
     keyboard = kb.main_menu_keyboard()
     reply_text = "*مرحبًا بك في TeleSpace* \.\n\nاختر من القائمة للبدء"
@@ -269,7 +269,13 @@ async def new_container_prompt(update: Update, context: ContextTypes.DEFAULT_TYP
     parts = query.data.split(':')
     # new_container_root:type or new_container_sub:parent_id:type
     context.user_data['container_type'] = parts[-1]
-    context.user_data['parent_id'] = int(parts[1]) if len(parts) == 3 else None
+    parent_id = None
+    if len(parts) == 3: # new_container_sub:parent_id:type
+        parent_id = int(parts[1])
+        context.user_data['previous_menu'] = f"container:{parent_id}"
+    else: # new_container_root:type
+        context.user_data['previous_menu'] = "my_space"
+    context.user_data['parent_id'] = parent_id
     
     type_text = "القسم" if context.user_data['container_type'] == 'section' else "المجلد"
     await query.message.edit_text(text=f"📝 أرسل اسم {type_text} الجديد:")
@@ -302,6 +308,7 @@ async def rename_container_prompt(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
     container_id = int(query.data.split(':')[1])
     context.user_data['container_to_rename'] = container_id
+    context.user_data['previous_menu'] = f"container:{container_id}"
     
     details = db.get_container_details(container_id)
     await query.message.edit_text(f"📝 الاسم الحالي: *{escape_markdown(details['name'], version=2)}*\n\nأرسل الاسم الجديد\.", parse_mode='MarkdownV2')
@@ -324,6 +331,7 @@ async def add_items_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.answer()
     container_id = int(query.data.split(':')[1])
     context.user_data['target_container_id'] = container_id
+    context.user_data['previous_menu'] = f"container:{container_id}"
     await query.message.edit_text(text="*➕ وضع الإضافة*\n\nأرسل ملفاتك، صورك، أو رسائلك\. عند الانتهاء، اضغط /done لحفظها\.", parse_mode='MarkdownV2')
     return AWAITING_ITEMS_FOR_UPLOAD
 
@@ -356,6 +364,19 @@ async def save_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """[معدل] يلغي المحادثة الحالية."""
     await update.message.reply_text("❌ تم إلغاء العملية.")
+    previous_menu = context.user_data.get('previous_menu')
     context.user_data.clear()
-    await start(update, context) # العودة للقائمة الرئيسية كخيار آمن
+
+    if previous_menu:
+        if previous_menu.startswith("container:"):
+            container_id = int(previous_menu.split(':')[1])
+            await show_container(update, context, container_id)
+        elif previous_menu == "my_space":
+            await return_to_my_space(update, context)
+        elif previous_menu == "shared_spaces":
+            await return_to_shared_spaces(update, context)
+        else:
+            await start(update, context) # Fallback to main menu if previous_menu is unrecognized
+    else:
+        await start(update, context) # Fallback to main menu if no previous_menu is stored
     return ConversationHandler.END

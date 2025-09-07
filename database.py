@@ -432,6 +432,25 @@ def grant_permission(user_id: int, content_type: str, content_id: int, new_permi
         if conn:
             conn.close()
 
+def revoke_permission(user_id: int, content_type: str, content_id: int):
+    """
+    [جديد] يلغي صلاحية مستخدم على حاوية.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM permissions WHERE user_id = ? AND content_type = ? AND content_id = ?",
+            (user_id, content_type, content_id)
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"DB Error in revoke_permission: {e}")
+    finally:
+        if conn:
+            conn.close()
+
 def get_permission_level(user_id: int, content_type: str, content_id: int) -> str | None:
     """
     [معدل] يتحقق من مستوى صلاحية المستخدم على حاوية بشكل هرمي.

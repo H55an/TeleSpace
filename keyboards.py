@@ -19,12 +19,7 @@ def build_my_space_keyboard(user_id: int) -> InlineKeyboardMarkup:
             f"{icon} {container['name']}", 
             callback_data=f"container:{container['id']}"
         )
-        controls_row = [
-            InlineKeyboardButton("⚙️", callback_data=f"settings_container:{container['id']}"),
-            InlineKeyboardButton("🔗", callback_data=f"share_menu_container:{container['id']}")
-        ]
         keyboard_layout.append([container_button])
-        keyboard_layout.append(controls_row)
         
     # أزرار إضافة جديدة
     control_buttons = [
@@ -69,6 +64,15 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
 
     permission = db.get_permission_level(user_id, container_details['type'], container_id)
 
+    # Add Settings and Share buttons for the current container
+    top_buttons = []
+    if permission in ['owner', 'admin']:
+        top_buttons.append(InlineKeyboardButton("⚙️", callback_data=f"settings_container:{container_id}"))
+    if permission == 'owner':
+        top_buttons.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_container:{container_id}"))
+    if top_buttons:
+        keyboard_layout.append(top_buttons)
+
     # عرض المحتويات الفرعية (أقسام ومجلدات)
     child_containers = db.get_child_containers(container_id)
     for child in child_containers:
@@ -79,18 +83,10 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
         child_button = InlineKeyboardButton(f"{prefix}{icon} {child['name']}", callback_data=f"container:{child['id']}")
         keyboard_layout.append([child_button])
 
-        # أزرار التحكم الفرعية (للعهدة أو المدير)
-        controls_row = []
-        if child_permission == 'owner' or child_permission == 'admin':
-            controls_row.append(InlineKeyboardButton("⚙️", callback_data=f"settings_container:{child['id']}"))
-        if child_permission == 'owner':
-            controls_row.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_container:{child['id']}"))
-        
-        if controls_row:
-            keyboard_layout.append(controls_row)
-
     # أزرار الإجراءات بناءً على نوع الحاوية الحالية
     action_buttons = []
+    
+    # Buttons for owner/admin
     if permission in ['owner', 'admin']:
         if container_details['type'] == 'section':
             action_buttons.extend([
@@ -98,11 +94,12 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
                 InlineKeyboardButton("➕ مجلد جديد", callback_data=f"new_container_sub:{container_id}:folder")
             ])
         elif container_details['type'] == 'folder':
-            action_buttons.extend([
-                InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_items:{container_id}"),
-                InlineKeyboardButton("📂 عرض المحتويات", callback_data=f"view_items:{container_id}:0")
-            ])
+            action_buttons.append(InlineKeyboardButton("➕ إضافة عناصر", callback_data=f"add_items:{container_id}"))
     
+    # "View Contents" button for owner, admin, and viewer if it's a folder
+    if container_details['type'] == 'folder' and permission in ['owner', 'admin', 'viewer']:
+        action_buttons.append(InlineKeyboardButton("📂 عرض المحتويات", callback_data=f"view_items:{container_id}:0"))
+
     if action_buttons:
         keyboard_layout.append(action_buttons)
 
