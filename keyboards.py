@@ -70,6 +70,15 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
         top_buttons.append(InlineKeyboardButton("⚙️", callback_data=f"settings_container:{container_id}"))
     if permission == 'owner':
         top_buttons.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_container:{container_id}"))
+    
+    # Add Leave button for shared containers (not owned)
+    if permission in ['admin', 'viewer'] and permission != 'owner':
+        if permission == 'admin':
+            top_buttons.append(InlineKeyboardButton("🚪 مغادرة", callback_data=f"leave_item_prompt_container:{container_id}"))
+        elif permission == 'viewer':
+            # Insert at the beginning of the keyboard_layout for viewers
+            keyboard_layout.insert(0, [InlineKeyboardButton("🚪 مغادرة", callback_data=f"leave_item_prompt_container:{container_id}")])
+
     if top_buttons:
         keyboard_layout.append(top_buttons)
 
@@ -137,9 +146,7 @@ def build_settings_keyboard(container_id: int, user_id: int) -> InlineKeyboardMa
         [InlineKeyboardButton("✏️ إعادة تسمية", callback_data=f"rename_container:{container_id}")],
         [InlineKeyboardButton("🗑️ حذف", callback_data=f"delete_container_prompt:{container_id}")]
     ]
-    # زر مغادرة العنصر للمستخدمين الذين ليسوا المالك
-    if permission != 'owner':
-         keyboard.append([InlineKeyboardButton("🚪 مغادرة", callback_data=f"leave_item_prompt_container:{container_id}")])
+    
 
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")])
     return InlineKeyboardMarkup(keyboard)

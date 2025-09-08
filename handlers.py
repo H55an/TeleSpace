@@ -58,6 +58,7 @@ async def show_container(update: Update, context: ContextTypes.DEFAULT_TYPE, con
 
     icon = "🗂️" if details['type'] == 'section' else "📁"
     text = f"{icon} *{escape_markdown(details['name'], version=2)}*\n\nتصفح، أضف، أو قم بإدارة المحتويات\."
+    
     keyboard = kb.build_container_view_keyboard(container_id, user_id)
 
     if update.callback_query:
@@ -150,9 +151,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 db.grant_permission(user.id, details['type'], share['content_id'], share['link_type'])
                 if share['link_type'] == 'admin':
                     db.deactivate_share_link(token)
-                await update.message.reply_text(f"✅ أهلاً بك! تم منحك صلاحية '{share['link_type']}' على '{details['name']}'.")
+                
+                # Notify the user
+                container_type_ar = "القسم" if details['type'] == 'section' else "المجلد"
+                await update.message.reply_text(f"✅ لقد حصلت على صلاحية وصول إلى {container_type_ar} '{details['name']}'.")
+
             else:
-                 await update.message.reply_text("⚠️ عذرًا، المحتوى المشار إليه لم يعد موجودًا\.")
+                 await update.message.reply_text("⚠️ عذرًا، المحتوى المشار إليه لم يعد موجودًا.")
         else:
             await update.message.reply_text("⚠️ عذرًا، الرابط غير صالح أو مستخدم.")
 
