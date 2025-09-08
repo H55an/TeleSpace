@@ -71,8 +71,9 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
     if permission == 'owner':
         top_buttons.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_container:{container_id}"))
     
-    # Add Leave button for shared containers (not owned)
-    if permission in ['admin', 'viewer'] and permission != 'owner':
+    # Add Leave button only for directly shared containers (not owned)
+    is_directly_shared = db.has_direct_permission(user_id, container_details['type'], container_id)
+    if is_directly_shared and permission != 'owner':
         if permission == 'admin':
             top_buttons.append(InlineKeyboardButton("🚪 مغادرة", callback_data=f"leave_item_prompt_container:{container_id}"))
         elif permission == 'viewer':

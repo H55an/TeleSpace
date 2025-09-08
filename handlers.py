@@ -18,7 +18,7 @@ async def return_to_my_space(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = """
     👤 *مساحتك الخاصة*
 
-    تصفح حاوياتك، أو أنشئ جديدًا\.
+    تصفح أقسامك ومجلداتك، أو أنشئ جديدًا\.
     """
     if update.callback_query:
         await update.callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
@@ -29,9 +29,9 @@ async def return_to_shared_spaces(update: Update, context: ContextTypes.DEFAULT_
     """[معدل] ينقل المستخدم إلى عرض المساحات المشتركة."""
     keyboard = kb.build_shared_spaces_keyboard(update.effective_user.id)
     text = """
-    🤝 *المساحات المشتركة*
+    🤝 *المساحة المشتركة*
 
-    تصفح الحاويات المشتركة معك\.
+    تصفح الأقسام والمجلدات التي تمت مشاركتها معك\.
     """
     if update.callback_query:
         await update.callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
@@ -45,7 +45,7 @@ async def show_container(update: Update, context: ContextTypes.DEFAULT_TYPE, con
 
     if not details:
         if update.callback_query:
-            await update.callback_query.answer("الحاوية غير موجودة!", show_alert=True)
+            await update.callback_query.answer("القسم أو المجلد غير موجود!", show_alert=True)
         return await return_to_my_space(update, context)
 
     permission = db.get_permission_level(user_id, details['type'], container_id)
@@ -57,7 +57,11 @@ async def show_container(update: Update, context: ContextTypes.DEFAULT_TYPE, con
         return
 
     icon = "🗂️" if details['type'] == 'section' else "📁"
-    text = f"{icon} *{escape_markdown(details['name'], version=2)}*\n\nتصفح، أضف، أو قم بإدارة المحتويات\."
+    
+    if permission in ['owner', 'admin']:
+        text = f"{icon} *{escape_markdown(details['name'], version=2)}*\n\nتصفح، أضف، أو قم بإدارة المحتويات\."
+    else:  # viewer
+        text = f"{icon} *{escape_markdown(details['name'], version=2)}*\n\nتصفح المحتويات\."
     
     keyboard = kb.build_container_view_keyboard(container_id, user_id)
 
@@ -226,7 +230,9 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     # --- الحذف ---
     elif data.startswith("delete_container_prompt:"):
         container_id = int(data.split(':')[1])
-        text = """🔥 *تحذير خطير!*\nسيتم حذف هذه الحاوية وكل محتوياتها نهائيًا. هل أنت متأكد؟"""
+        details = db.get_container_details(container_id)
+        container_type_ar = "القسم" if details['type'] == 'section' else "المجلد"
+        text = f"""🔥 *تحذير !*\nسيتم حذف هذا {container_type_ar} وكل محتوياته نهائيًا. هل أنت متأكد؟"""
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔥 نعم، متأكد", callback_data=f"delete_container_confirm:{container_id}"), InlineKeyboardButton("❌ تراجع", callback_data=f"settings_container:{container_id}")]])
         await query.message.edit_text(text, reply_markup=keyboard)
 
@@ -242,9 +248,52 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif data.startswith("delete_item_prompt:"):
         _, item_id, container_id = data.split(':')
+        item_id = int(item_id)
+        
+        item_details = db.get_item_details(item_id)
+        if not item_details:
+            await query.answer("العنصر لم يعد موجودًا!", show_alert=True)
+            return
+
         text = "⚠️ هل أنت متأكد من حذف هذا العنصر؟"
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ نعم", callback_data=f"delete_item_confirm:{item_id}:{container_id}"), InlineKeyboardButton("❌ لا", callback_data=f"view_items:{container_id}:0")]])
-        await query.message.edit_text(text, reply_markup=keyboard)
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ نعم", callback_data=f"delete_item_confirm:{item_id}:{container_id}"),
+                InlineKeyboardButton("❌ لا", callback_data=f"undo_delete_item:{item_id}:{container_id}")
+            ]
+        ])
+        
+        try:
+            if item_details['item_type'] == 'text':
+                await query.message.edit_text(text, reply_markup=keyboard)
+            else:
+                await query.message.edit_caption(caption=text, reply_markup=keyboard)
+        except Exception as e:
+            print(f"Error editing message for delete prompt: {e}")
+            await query.answer("حدث خطأ أثناء تحرير الرسالة.", show_alert=True)
+
+    elif data.startswith("undo_delete_item:"):
+        _, item_id, container_id = data.split(':')
+        item_id = int(item_id)
+
+        item_details = db.get_item_details(item_id)
+        if not item_details:
+            await query.answer("العنصر لم يعد موجودًا!", show_alert=True)
+            await query.message.edit_text("تم حذف هذا العنصر بالفعل.")
+            return
+
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🗑️ حذف هذا العنصر", callback_data=f"delete_item_prompt:{item_id}:{container_id}")]
+        ])
+
+        try:
+            if item_details['item_type'] == 'text':
+                await query.message.edit_text(item_details['content'], reply_markup=reply_markup)
+            else:
+                await query.message.edit_caption(caption=item_details['content'], reply_markup=reply_markup)
+        except Exception as e:
+            print(f"Error restoring message: {e}")
+            await query.answer("حدث خطأ أثناء استعادة الرسالة.", show_alert=True)
 
     elif data.startswith("delete_item_confirm:"):
         _, item_id, container_id = data.split(':')
@@ -254,8 +303,10 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     # --- مغادرة العناصر المشتركة ---
     elif data.startswith("leave_item_prompt_container:"):
         container_id = int(data.split(':')[1])
-        text = "⚠️ هل أنت متأكد أنك تريد مغادرة هذا العنصر المشترك؟"
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ نعم، مغادرة", callback_data=f"leave_item_confirm_container:{container_id}"), InlineKeyboardButton("❌ تراجع", callback_data=f"settings_container:{container_id}")]])
+        details = db.get_container_details(container_id)
+        container_type_ar = "القسم" if details['type'] == 'section' else "المجلد"
+        text = f"⚠️ هل أنت متأكد أنك تريد مغادرة هذا {container_type_ar} المشترك؟"
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ نعم، مغادرة", callback_data=f"leave_item_confirm_container:{container_id}"), InlineKeyboardButton("❌ تراجع", callback_data=f"container:{container_id}")]])
         await query.message.edit_text(text, reply_markup=keyboard)
 
     elif data.startswith("leave_item_confirm_container:"):
