@@ -1,3 +1,7 @@
 TELEGRAM_BOT_TOKEN = "7531104977:AAFulheOQcYovKneKhoNWkF5l7QPRzYxL8g"
-DB_NAME = "telespace.db"
 STORAGE_CHANNEL_ID = -1003046683134
+
+DB_HOST = "localhost"
+DB_NAME = "telespace_db"
+DB_USER = "telespace_user"
+DB_PASS = "Hassan@7353"

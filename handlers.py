@@ -96,7 +96,7 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
     items_page, total_items = db.get_items_paginated(container_id, limit=PAGE_SIZE, offset=offset)
     
     if not items_page and offset == 0:
-        await context.bot.send_message(chat_id, "📁 المجلد فارغ\.", reply_markup=kb.back_button(f"container:{container_id}"))
+        await context.bot.send_message(chat_id, "📁 المجلد فارغ.", reply_markup=kb.back_button(f"container:{container_id}"))
         return
 
     if not items_page and offset > 0:
@@ -298,7 +298,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif data.startswith("delete_item_confirm:"):
         _, item_id, container_id = data.split(':')
         db.delete_item(int(item_id))
-        await query.message.edit_text("✅ تم الحذف.")
+        await query.message.delete()
 
     # --- مغادرة العناصر المشتركة ---
     elif data.startswith("leave_item_prompt_container:"):
