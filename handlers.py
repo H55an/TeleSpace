@@ -145,6 +145,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     db.add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
 
+    # Handle share links first
     if context.args:
         token = context.args[0]
         share = db.get_share_by_token(token)
@@ -156,21 +157,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 if share['link_type'] == 'admin':
                     db.deactivate_share_link(token)
                 
-                # Notify the user
                 container_type_ar = "القسم" if details['type'] == 'section' else "المجلد"
                 await update.message.reply_text(f"✅ لقد حصلت على صلاحية وصول إلى {container_type_ar} '{details['name']}'.")
-
             else:
                  await update.message.reply_text("⚠️ عذرًا، المحتوى المشار إليه لم يعد موجودًا.")
         else:
             await update.message.reply_text("⚠️ عذرًا، الرابط غير صالح أو مستخدم.")
 
+    # Then, send the welcome message
+    first_name = escape_markdown(user.first_name, version=2)
     keyboard = kb.main_menu_keyboard()
-    reply_text = "*مرحبًا بك في TeleSpace* \.\n\nاختر من القائمة للبدء"
+    reply_text = f"""مرحبًا {first_name}، أهلًا بك في *TeleSpace* \!\n\nمساحتك الرقمية على Telegram لتحويل الفوضى إلى مساحة عمل منظمة \.\n\n🗂️ *نظّم* أفكارك ومشاريعك\.
+💾 *احفظ* ملفاتك ورسائلك المهمة\.
+🤝 *شارك* محتواك بسهولة وأمان\.
+    
+استكشف مساحتك أو ابدأ بتصفح ما شاركه الآخرون معك\."""
     
     if update.callback_query:
+        # If coming from a button, edit the message
         await update.callback_query.message.edit_text(reply_text, reply_markup=keyboard, parse_mode='MarkdownV2')
     else:
+        # If it's a /start command, send a new message
         await update.message.reply_text(reply_text, reply_markup=keyboard, parse_mode='MarkdownV2')
         
     return ConversationHandler.END
