@@ -22,8 +22,29 @@ def get_db_connection():
         print(f"DB Connection Error: {e}")
         return None
 
+# --- Activity Log Functions ---
+def _log_activity(cursor, user_id: int, activity_type: str, target_id: int = None, target_type: str = None, details: str = None):
+    """
+    [Internal] Logs a user activity using the provided cursor.
+    """
+    try:
+        cursor.execute(
+            """
+            INSERT INTO activity_log (user_id, activity_type, target_id, target_type, details)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (user_id, activity_type, target_id, target_type, details)
+        )
+    except psycopg2.Error as e:
+        # Log the error but don't interrupt the main operation
+        print(f"DB Error in _log_activity: {e}")
+
 # --- User Functions ---
 def add_user_if_not_exists(user_id: int, first_name: str):
+    """
+    Adds a new user if they don't exist and logs the join activity.
+    Also updates the last_active_date for existing users.
+    """
     conn = None
     try:
         conn = get_db_connection()
@@ -31,11 +52,36 @@ def add_user_if_not_exists(user_id: int, first_name: str):
         
         with conn.cursor() as cursor:
             cursor.execute("SELECT user_id FROM users WHERE user_id = %s", (user_id,))
-            if not cursor.fetchone():
-                cursor.execute("INSERT INTO users (user_id, first_name) VALUES (%s, %s)", (user_id, first_name))
-                conn.commit()
+            if cursor.fetchone():
+                # User exists, just update their last active time
+                cursor.execute("UPDATE users SET last_active_date = NOW() WHERE user_id = %s", (user_id,))
+            else:
+                # New user, insert them and log it
+                cursor.execute(
+                    "INSERT INTO users (user_id, first_name, join_date, last_active_date) VALUES (%s, %s, NOW(), NOW())", 
+                    (user_id, first_name)
+                )
+                _log_activity(cursor, user_id, 'USER_JOINED')
+            conn.commit()
     except psycopg2.Error as e:
         print(f"DB Error in add_user_if_not_exists: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def update_user_last_active(user_id: int):
+    """
+    Updates the last_active_date for a given user.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE users SET last_active_date = NOW() WHERE user_id = %s", (user_id,))
+            conn.commit()
+    except psycopg2.Error as e:
+        print(f"DB Error in update_user_last_active: {e}")
     finally:
         if conn:
             conn.close()
@@ -43,7 +89,7 @@ def add_user_if_not_exists(user_id: int, first_name: str):
 # --- Container Functions (Unified) ---
 def add_container(owner_user_id: int, name: str, type: str, parent_id: int = None) -> int:
     """
-    [Unified] Adds a new container (section or folder) and returns its ID.
+    Adds a new container and logs the creation activity.
     """
     conn = None
     try:
@@ -52,10 +98,11 @@ def add_container(owner_user_id: int, name: str, type: str, parent_id: int = Non
 
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO containers (owner_user_id, name, type, parent_id) VALUES (%s, %s, %s, %s) RETURNING id",
+                "INSERT INTO containers (owner_user_id, name, type, parent_id, creation_date) VALUES (%s, %s, %s, %s, NOW()) RETURNING id",
                 (owner_user_id, name, type, parent_id)
             )
             new_id = cursor.fetchone()[0]
+            _log_activity(cursor, owner_user_id, f'CREATE_{type.upper()}', new_id, type, f"Name: {name}")
             conn.commit()
             return new_id
     except psycopg2.Error as e:
@@ -103,7 +150,10 @@ def container_exists(container_id: int) -> bool:
         if conn:
             conn.close()
 
-def rename_container(container_id: int, new_name: str):
+def rename_container(container_id: int, new_name: str, user_id: int):
+    """
+    Renames a container and logs the activity.
+    """
     conn = None
     try:
         conn = get_db_connection()
@@ -111,6 +161,7 @@ def rename_container(container_id: int, new_name: str):
 
         with conn.cursor() as cursor:
             cursor.execute("UPDATE containers SET name = %s WHERE id = %s", (new_name, container_id))
+            _log_activity(cursor, user_id, 'RENAME_CONTAINER', container_id, 'container', f"New Name: {new_name}")
             conn.commit()
     except psycopg2.Error as e:
         print(f"DB Error in rename_container: {e}")
@@ -185,20 +236,27 @@ def get_container_path(container_id: int) -> list:
         if conn:
             conn.close()
 
-def _delete_container_recursive_step(cursor, container_id: int):
-    """Helper for recursive deletion on a single cursor."""
+def _delete_container_recursive_step(cursor, container_id: int, user_id: int):
+    """Helper for recursive deletion that also logs the activity."""
+    # Fetch details before deleting for logging
+    cursor.execute("SELECT name, type FROM containers WHERE id = %s", (container_id,))
+    details = cursor.fetchone()
+    if details:
+        name, type = details
+        _log_activity(cursor, user_id, f'DELETE_{type.upper()}', container_id, type, f"Name: {name}")
+
     # Find and delete child containers first
     cursor.execute("SELECT id FROM containers WHERE parent_id = %s", (container_id,))
     child_containers = cursor.fetchall()
     for child in child_containers:
-        _delete_container_recursive_step(cursor, child[0])
+        _delete_container_recursive_step(cursor, child[0], user_id)
 
     # Delete the container itself (permissions, shares, items, etc. are deleted by CASCADE)
     cursor.execute("DELETE FROM containers WHERE id = %s", (container_id,))
 
-def delete_container_recursively(container_id: int):
+def delete_container_recursively(container_id: int, user_id: int):
     """
-    Deletes a container and all its contents using a single transaction.
+    Deletes a container and all its contents, logging the deletion.
     """
     conn = None
     try:
@@ -206,7 +264,7 @@ def delete_container_recursively(container_id: int):
         if not conn: return
 
         with conn.cursor() as cursor:
-            _delete_container_recursive_step(cursor, container_id)
+            _delete_container_recursive_step(cursor, container_id, user_id)
         
         conn.commit()
         print(f"Successfully deleted container {container_id} and all its contents.")
@@ -235,7 +293,10 @@ def get_parent_container_id(container_id: int) -> int | None:
             conn.close()
 
 # --- Item Functions ---
-def add_item(container_id: int, item_name: str, item_type: str, content: str, file_unique_id: str = None, file_id: str = None):
+def add_item(container_id: int, user_id: int, item_name: str, item_type: str, content: str, file_unique_id: str = None, file_id: str = None):
+    """
+    Adds an item to a container and logs the activity.
+    """
     conn = None
     try:
         conn = get_db_connection()
@@ -243,9 +304,11 @@ def add_item(container_id: int, item_name: str, item_type: str, content: str, fi
 
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO items (container_id, item_name, item_type, content, file_unique_id, file_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                "INSERT INTO items (container_id, item_name, item_type, content, file_unique_id, file_id, upload_date) VALUES (%s, %s, %s, %s, %s, %s, NOW()) RETURNING item_record_id",
                 (container_id, item_name, item_type, content, file_unique_id, file_id)
             )
+            item_id = cursor.fetchone()[0]
+            _log_activity(cursor, user_id, 'ADD_ITEM', item_id, 'item', f"Name: {item_name} in container {container_id}")
             conn.commit()
     except psycopg2.Error as e:
         print(f"DB Error in add_item: {e}")
@@ -264,7 +327,7 @@ def get_items_paginated(container_id: int, limit: int, offset: int):
             total_items = cursor.fetchone()[0]
             
             cursor.execute(
-                "SELECT item_record_id, item_name, item_type, content, file_id FROM items WHERE container_id = %s ORDER BY item_record_id ASC LIMIT %s OFFSET %s",
+                "SELECT item_record_id, item_name, item_type, content, file_id FROM items WHERE container_id = %s ORDER BY upload_date ASC, item_record_id ASC LIMIT %s OFFSET %s",
                 (container_id, limit, offset)
             )
             items_page = cursor.fetchall()
@@ -332,13 +395,18 @@ def item_exists(item_record_id: int) -> bool:
         if conn:
             conn.close()
 
-def delete_item(item_record_id: int):
+def delete_item(item_record_id: int, user_id: int):
+    """
+    Deletes an item and logs the activity.
+    """
     conn = None
     try:
         conn = get_db_connection()
         if not conn: return
 
         with conn.cursor() as cursor:
+            # Log first, then delete
+            _log_activity(cursor, user_id, 'DELETE_ITEM', item_record_id, 'item')
             cursor.execute("DELETE FROM items WHERE item_record_id = %s", (item_record_id,))
             conn.commit()
     except psycopg2.Error as e:
@@ -347,7 +415,10 @@ def delete_item(item_record_id: int):
         if conn:
             conn.close()
 
-def delete_all_items_in_container(container_id: int):
+def delete_all_items_in_container(container_id: int, user_id: int):
+    """
+    Deletes all items in a container and logs the activity.
+    """
     conn = None
     try:
         conn = get_db_connection()
@@ -356,6 +427,8 @@ def delete_all_items_in_container(container_id: int):
         with conn.cursor() as cursor:
             cursor.execute("DELETE FROM items WHERE container_id = %s", (container_id,))
             count = cursor.rowcount
+            if count > 0:
+                _log_activity(cursor, user_id, 'DELETE_ALL_ITEMS', container_id, 'container', f"Deleted {count} items.")
             conn.commit()
             return count
     except psycopg2.Error as e:
@@ -386,6 +459,7 @@ def get_or_create_viewer_share_link(owner_user_id: int, content_type: str, conte
                     "INSERT INTO shares (share_token, content_type, content_id, owner_user_id, link_type) VALUES (%s, %s, %s, %s, %s)",
                     (token, content_type, content_id, owner_user_id, 'viewer')
                 )
+                _log_activity(cursor, owner_user_id, 'CREATE_SHARE_LINK', content_id, content_type, "Type: viewer")
                 conn.commit()
                 return token
     except psycopg2.Error as e:
@@ -407,6 +481,7 @@ def create_share_link(owner_user_id: int, content_type: str, content_id: int, li
                 "INSERT INTO shares (share_token, content_type, content_id, owner_user_id, link_type) VALUES (%s, %s, %s, %s, %s)",
                 (token, content_type, content_id, owner_user_id, link_type)
             )
+            _log_activity(cursor, owner_user_id, 'CREATE_SHARE_LINK', content_id, content_type, f"Type: {link_type}")
             conn.commit()
             return token
     except psycopg2.Error as e:
@@ -432,7 +507,8 @@ def get_share_by_token(token: str):
         if conn:
             conn.close()
 
-def deactivate_share_link(token: str):
+def deactivate_share_link(token: str, user_id: int):
+    """ Logs who used the link """
     conn = None
     try:
         conn = get_db_connection()
@@ -440,6 +516,7 @@ def deactivate_share_link(token: str):
 
         with conn.cursor() as cursor:
             cursor.execute("UPDATE shares SET is_used = TRUE WHERE share_token = %s", (token,))
+            _log_activity(cursor, user_id, 'USE_SHARE_LINK', details=f"Token: {token}")
             conn.commit()
     except psycopg2.Error as e:
         print(f"DB Error in deactivate_share_link: {e}")
@@ -454,7 +531,6 @@ def grant_permission(user_id: int, content_type: str, content_id: int, new_permi
         if not conn: return
 
         with conn.cursor() as cursor:
-            # Use ON CONFLICT to handle both INSERT and UPDATE in one go (UPSERT)
             query = """
                 INSERT INTO permissions (user_id, content_type, content_id, permission_level)
                 VALUES (%s, %s, %s, %s)
@@ -464,6 +540,9 @@ def grant_permission(user_id: int, content_type: str, content_id: int, new_permi
                     permissions.permission_level = 'viewer' AND EXCLUDED.permission_level = 'admin';
             """
             cursor.execute(query, (user_id, content_type, content_id, new_permission_level))
+            # Log only if a row was actually affected
+            if cursor.rowcount > 0:
+                _log_activity(cursor, user_id, 'GRANT_PERMISSION', content_id, content_type, f"Level: {new_permission_level}")
             conn.commit()
     except psycopg2.Error as e:
         print(f"DB Error in grant_permission: {e}")
@@ -482,6 +561,8 @@ def revoke_permission(user_id: int, content_type: str, content_id: int):
                 "DELETE FROM permissions WHERE user_id = %s AND content_type = %s AND content_id = %s",
                 (user_id, content_type, content_id)
             )
+            if cursor.rowcount > 0:
+                 _log_activity(cursor, user_id, 'REVOKE_PERMISSION', content_id, content_type)
             conn.commit()
     except psycopg2.Error as e:
         print(f"DB Error in revoke_permission: {e}")
