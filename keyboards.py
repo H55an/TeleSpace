@@ -159,7 +159,7 @@ def build_share_menu_keyboard(container_id: int) -> InlineKeyboardMarkup:
     """
     keyboard = [
         [InlineKeyboardButton("👁️ رابط مشاهدة", callback_data=f"get_viewer_link:{container_id}")],
-        [InlineKeyboardButton("👥 إضافة مدير", callback_data=f"get_admin_link:{container_id}")],
+        [InlineKeyboardButton("👥 إضافة مشرف", callback_data=f"get_admin_link:{container_id}")],
         [InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")]
     ]
     return InlineKeyboardMarkup(keyboard)

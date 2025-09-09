@@ -84,6 +84,25 @@ def get_container_details(container_id: int):
         if conn:
             conn.close()
 
+def container_exists(container_id: int) -> bool:
+    """
+    Checks if a container with the given ID exists.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return False
+        
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT 1 FROM containers WHERE id = %s", (container_id,))
+            return cursor.fetchone() is not None
+    except psycopg2.Error as e:
+        print(f"DB Error in container_exists: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 def rename_container(container_id: int, new_name: str):
     conn = None
     try:
@@ -290,6 +309,25 @@ def get_item_details(item_record_id: int):
     except psycopg2.Error as e:
         print(f"DB Error in get_item_details: {e}")
         return None
+    finally:
+        if conn:
+            conn.close()
+
+def item_exists(item_record_id: int) -> bool:
+    """
+    Checks if an item with the given ID exists.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return False
+        
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT 1 FROM items WHERE item_record_id = %s", (item_record_id,))
+            return cursor.fetchone() is not None
+    except psycopg2.Error as e:
+        print(f"DB Error in item_exists: {e}")
+        return False
     finally:
         if conn:
             conn.close()

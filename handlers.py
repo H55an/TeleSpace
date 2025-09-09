@@ -45,13 +45,13 @@ async def show_container(update: Update, context: ContextTypes.DEFAULT_TYPE, con
 
     if not details:
         if update.callback_query:
-            await update.callback_query.answer("القسم أو المجلد غير موجود!", show_alert=True)
+            await update.callback_query.answer("القسم أو المجلد غير موجود!", show_alert=False)
         return await return_to_my_space(update, context)
 
     permission = db.get_permission_level(user_id, details['type'], container_id)
     if permission is None:
         if update.callback_query:
-            await update.callback_query.answer("ليس لديك صلاحية الوصول.", show_alert=True)
+            await update.callback_query.answer("ليس لديك صلاحية الوصول.", show_alert=False)
         else:
             await update.message.reply_text("ليس لديك صلاحية الوصول.")
         return
@@ -89,6 +89,10 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
     """[معدل] يعرض ويرسل محتويات حاوية (مجلد)."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
+
+    if not db.container_exists(container_id):
+        await context.bot.send_message(chat_id, "⚠️ عذرًا، يبدو أن هذا المجلد قد تم حذفه بالفعل.")
+        return
 
     permission = db.get_permission_level(user_id, 'folder', container_id)
     can_delete = permission in ['owner', 'admin']
@@ -139,9 +143,11 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
         # All items have been displayed.
         await context.bot.send_message(chat_id, "✅ تم عرض كل العناصر.", reply_markup=kb.back_button(f"container:{container_id}"))
 
+
 # --- Main Interface and Browsing ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """[معدل] يبدأ البوت ويعالج روابط المشاركة."""
+    context.user_data.clear() # Start with a clean slate
     user = update.effective_user
     db.add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
 
@@ -153,12 +159,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if share and not share['is_used']:
             details = db.get_container_details(share['content_id'])
             if details:
-                db.grant_permission(user.id, details['type'], share['content_id'], share['link_type'])
-                if share['link_type'] == 'admin':
-                    db.deactivate_share_link(token)
-                
-                container_type_ar = "القسم" if details['type'] == 'section' else "المجلد"
-                await update.message.reply_text(f"✅ لقد حصلت على صلاحية وصول إلى {container_type_ar} '{details['name']}'.")
+                # --- التحقق من الصلاحيات الحالية قبل منح صلاحية جديدة ---
+                current_permission = db.get_permission_level(user.id, details['type'], share['content_id'])
+                is_already_privileged = current_permission in ['owner', 'admin']
+                container_type_ar = "قسم" if details['type'] == 'section' else "مجلد"
+
+                # إذا كان الرابط للمشرف والمستخدم لديه صلاحيات بالفعل، لا تستهلك الرابط
+                if share['link_type'] == 'admin' and is_already_privileged:
+                    await update.message.reply_text(f"👍 أنت بالفعل مشرف لـ {container_type_ar} '{details['name']}'.")
+                else:
+                    # امنح الصلاحية وعطّل الرابط إذا لزم الأمر
+                    db.grant_permission(user.id, details['type'], share['content_id'], share['link_type'])
+                    if share['link_type'] == 'admin':
+                        db.deactivate_share_link(token)
+                    
+                    await update.message.reply_text(
+                        f"✅ لقد حصلت على صلاحية وصول إلى {container_type_ar} '{details['name']}'.\n\nيمكنك تصفحه في المساحات المشتركة."
+                    )
             else:
                  await update.message.reply_text("⚠️ عذرًا، المحتوى المشار إليه لم يعد موجودًا.")
         else:
@@ -167,7 +184,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Then, send the welcome message
     first_name = escape_markdown(user.first_name, version=2)
     keyboard = kb.main_menu_keyboard()
-    reply_text = f"""مرحبًا {first_name}، أهلًا بك في *TeleSpace* \!\n\nمساحتك الرقمية على Telegram لتحويل الفوضى إلى مساحة عمل منظمة \.\n\n🗂️ *نظّم* أفكارك ومشاريعك\.
+    reply_text = f"""
+مرحبًا {first_name}، يسعدنا تواجدك في *TeleSpace* \!
+
+مساحتك الرقمية على Telegram لتحويل الفوضى إلى مساحة عمل منظمة \.
+
+🗂️ *نظّم* أفكارك ومشاريعك\.
 💾 *احفظ* ملفاتك ورسائلك المهمة\.
 🤝 *شارك* محتواك بسهولة وأمان\.
     
@@ -185,7 +207,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """[معدل] الموجه الرئيسي لضغطات الأزرار."""
     query = update.callback_query
-    await query.answer()
     data = query.data
     user_id = query.from_user.id
 
@@ -203,6 +224,9 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     # --- الإعدادات ---
     elif data.startswith("settings_container:"):
         container_id = int(data.split(':')[1])
+        if not db.container_exists(container_id):
+            await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
+            return await query.message.delete()
         details = db.get_container_details(container_id)
         text = f"⚙️ *إعدادات: {escape_markdown(details['name'], version=2)}*\n\."
         keyboard = kb.build_settings_keyboard(container_id, user_id)
@@ -211,6 +235,9 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     # --- المشاركة ---
     elif data.startswith("share_menu_container:"):
         container_id = int(data.split(':')[1])
+        if not db.container_exists(container_id):
+            await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
+            return await query.message.delete()
         details = db.get_container_details(container_id)
         text = f"🔗 *مشاركة: {escape_markdown(details['name'], version=2)}*\n\."
         keyboard = kb.build_share_menu_keyboard(container_id)
@@ -220,6 +247,9 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         parts = data.split(':')
         link_type = 'viewer' if parts[0] == "get_viewer_link" else 'admin'
         container_id = int(parts[1])
+        if not db.container_exists(container_id):
+            await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
+            return await query.message.delete()
         details = db.get_container_details(container_id)
         
         if link_type == 'viewer':
@@ -238,17 +268,28 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif data.startswith("delete_container_prompt:"):
         container_id = int(data.split(':')[1])
         details = db.get_container_details(container_id)
+        if not details:
+            await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
+            return await query.message.delete()
+
         container_type_ar = "القسم" if details['type'] == 'section' else "المجلد"
-        text = f"""🔥 *تحذير !*\nسيتم حذف هذا {container_type_ar} وكل محتوياته نهائيًا. هل أنت متأكد؟"""
+        text = f"""⚠️ تحذير !\nسيتم حذف هذا {container_type_ar} وكل محتوياته نهائيًا. هل أنت متأكد؟"""
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔥 نعم، متأكد", callback_data=f"delete_container_confirm:{container_id}"), InlineKeyboardButton("❌ تراجع", callback_data=f"settings_container:{container_id}")]])
         await query.message.edit_text(text, reply_markup=keyboard)
 
     elif data.startswith("delete_container_confirm:"):
         container_id = int(data.split(':')[1])
+        
+        if not db.container_exists(container_id):
+            await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
+            return await query.message.delete()
+
         parent_id = db.get_parent_container_id(container_id)
         db.delete_container_recursively(container_id)
-        await query.answer("✅ تم الحذف بنجاح.", show_alert=True)
-        if parent_id:
+        await query.answer("✅ تم الحذف بنجاح.", show_alert=False)
+        
+        # After deletion, attempt to refresh the parent view
+        if parent_id and db.container_exists(parent_id):
             await show_container(update, context, parent_id)
         else:
             await return_to_my_space(update, context)
@@ -259,7 +300,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         item_details = db.get_item_details(item_id)
         if not item_details:
-            await query.answer("العنصر لم يعد موجودًا!", show_alert=True)
+            await query.answer("العنصر لم يعد موجودًا!", show_alert=False)
             return
 
         text = "⚠️ هل أنت متأكد من حذف هذا العنصر؟"
@@ -277,7 +318,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await query.message.edit_caption(caption=text, reply_markup=keyboard)
         except Exception as e:
             print(f"Error editing message for delete prompt: {e}")
-            await query.answer("حدث خطأ أثناء تحرير الرسالة.", show_alert=True)
+            await query.answer("حدث خطأ أثناء تحرير الرسالة.", show_alert=False)
 
     elif data.startswith("undo_delete_item:"):
         _, item_id, container_id = data.split(':')
@@ -285,7 +326,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         item_details = db.get_item_details(item_id)
         if not item_details:
-            await query.answer("العنصر لم يعد موجودًا!", show_alert=True)
+            await query.answer("العنصر لم يعد موجودًا!", show_alert=False)
             await query.message.edit_text("تم حذف هذا العنصر بالفعل.")
             return
 
@@ -300,16 +341,27 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await query.message.edit_caption(caption=item_details['content'], reply_markup=reply_markup)
         except Exception as e:
             print(f"Error restoring message: {e}")
-            await query.answer("حدث خطأ أثناء استعادة الرسالة.", show_alert=True)
+            await query.answer("حدث خطأ أثناء استعادة الرسالة.", show_alert=False)
 
     elif data.startswith("delete_item_confirm:"):
-        _, item_id, container_id = data.split(':')
-        db.delete_item(int(item_id))
+        _, item_id_str, container_id_str = data.split(':')
+        item_id = int(item_id_str)
+
+        # --- Existence Check ---
+        if not db.item_exists(item_id):
+            await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
+            return await query.message.delete()
+
+        db.delete_item(item_id)
+        await query.answer("✅ تم حذف العنصر بنجاح.", show_alert=False)
         await query.message.delete()
 
     # --- مغادرة العناصر المشتركة ---
     elif data.startswith("leave_item_prompt_container:"):
         container_id = int(data.split(':')[1])
+        if not db.container_exists(container_id):
+            await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
+            return await query.message.delete()
         details = db.get_container_details(container_id)
         container_type_ar = "القسم" if details['type'] == 'section' else "المجلد"
         text = f"⚠️ هل أنت متأكد أنك تريد مغادرة هذا {container_type_ar} المشترك؟"
@@ -318,9 +370,12 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     elif data.startswith("leave_item_confirm_container:"):
         container_id = int(data.split(':')[1])
+        if not db.container_exists(container_id):
+            await query.answer("⚠️ عذرًا، لم تعد عضوًا هنا أو أن العنصر قد حذف.", show_alert=False)
+            return await query.message.delete()
         details = db.get_container_details(container_id)
         db.revoke_permission(user_id, details['type'], container_id)
-        await query.answer("✅ تمت المغادرة.", show_alert=True)
+        await query.answer("✅ تمت المغادرة.", show_alert=False)
         await return_to_shared_spaces(update, context)
 
 # --- Conversation Handlers ---
@@ -335,6 +390,10 @@ async def new_container_prompt(update: Update, context: ContextTypes.DEFAULT_TYP
     parent_id = None
     if len(parts) == 3: # new_container_sub:parent_id:type
         parent_id = int(parts[1])
+        if not db.container_exists(parent_id):
+            await query.answer("⚠️ عذرًا، يبدو أن المجلد الأصل قد تم حذفه بالفعل.", show_alert=False)
+            await query.message.delete()
+            return ConversationHandler.END
         context.user_data['previous_menu'] = f"container:{parent_id}"
     else: # new_container_root:type
         context.user_data['previous_menu'] = "my_space"
@@ -346,12 +405,25 @@ async def new_container_prompt(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def receive_container_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    name = update.message.text
+    name = update.message.text.strip()
+
+    # --- Input Validation ---
+    if not (1 <= len(name) <= 100):
+        await update.message.reply_text("⚠️ الاسم غير صالح. يجب أن يكون طوله بين 1 و 100 حرف. يرجى المحاولة مرة أخرى.")
+        return AWAITING_CONTAINER_NAME # Keep user in the same state
+
     container_type = context.user_data['container_type']
     parent_id = context.user_data.get('parent_id')
 
     owner_id = user_id
     if parent_id:
+        # Ensure parent container still exists before creating a child
+        if not db.container_exists(parent_id):
+            await update.message.reply_text("⚠️ عذرًا، يبدو أن المجلد الأصل الذي تحاول الإضافة إليه قد تم حذفه.")
+            context.user_data.clear()
+            await return_to_my_space(update, context)
+            return ConversationHandler.END
+        
         parent_details = db.get_container_details(parent_id)
         if parent_details: owner_id = parent_details['owner_user_id']
 
@@ -370,17 +442,36 @@ async def rename_container_prompt(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
     container_id = int(query.data.split(':')[1])
+
+    # --- Existence Check ---
+    details = db.get_container_details(container_id)
+    if not details:
+        await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
+        await query.message.delete() # Remove the stale keyboard
+        return ConversationHandler.END
+
     context.user_data['container_to_rename'] = container_id
     context.user_data['previous_menu'] = f"container:{container_id}"
     
-    details = db.get_container_details(container_id)
     await query.message.edit_text(f"📝 الاسم الحالي: *{escape_markdown(details['name'], version=2)}*\n\nأرسل الاسم الجديد\.", parse_mode='MarkdownV2')
     return AWAITING_RENAME_INPUT
 
 async def receive_new_container_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    new_name = update.message.text
+    new_name = update.message.text.strip()
     container_id = context.user_data['container_to_rename']
-    
+
+    # --- Input Validation ---
+    if not (1 <= len(new_name) <= 100):
+        await update.message.reply_text("⚠️ الاسم غير صالح. يجب أن يكون طوله بين 1 و 100 حرف. يرجى المحاولة مرة أخرى.")
+        return AWAITING_RENAME_INPUT # Keep user in the same state
+
+    # --- Existence Check ---
+    if not db.container_exists(container_id):
+        await update.message.reply_text("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.")
+        context.user_data.clear()
+        await return_to_my_space(update, context)
+        return ConversationHandler.END
+
     db.rename_container(container_id, new_name)
     await update.message.reply_text(f"✅ تم تغيير الاسم إلى: {new_name}")
     
@@ -393,10 +484,16 @@ async def add_items_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
     container_id = int(query.data.split(':')[1])
+    if not db.container_exists(container_id):
+        await query.answer("⚠️ عذرًا، يبدو أن هذا المجلد قد تم حذفه بالفعل.", show_alert=False)
+        await query.message.delete()
+        return ConversationHandler.END
+
     context.user_data['target_container_id'] = container_id
     context.user_data['previous_menu'] = f"container:{container_id}"
     await query.message.edit_text(text="*➕ وضع الإضافة*\n\nأرسل ملفاتك، صورك، أو رسائلك\. عند الانتهاء، اضغط /done لحفظها\.", parse_mode='MarkdownV2')
     return AWAITING_ITEMS_FOR_UPLOAD
+
 
 async def collect_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if 'items_to_add_buffer' not in context.user_data:
