@@ -12,7 +12,7 @@ def get_db_connection():
     """
     try:
         conn = psycopg2.connect(
-            dbname=config.DATABASE_URL
+            config.DATABASE_URL
         )
         return conn
     except psycopg2.Error as e:

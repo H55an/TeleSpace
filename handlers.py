@@ -397,6 +397,13 @@ async def new_container_prompt(update: Update, context: ContextTypes.DEFAULT_TYP
     return AWAITING_CONTAINER_NAME
 
 async def receive_container_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # --- Robustness Check ---
+    if 'container_type' not in context.user_data:
+        await update.message.reply_text("⚠️ عذرًا، يبدو أن العملية قد انقطعت. يرجى المحاولة مرة أخرى من البداية.")
+        context.user_data.clear()
+        await start(update, context) # Go back to the main menu
+        return ConversationHandler.END
+
     user_id = update.effective_user.id
     name = update.message.text.strip()
 
@@ -484,7 +491,7 @@ async def add_items_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     context.user_data['target_container_id'] = container_id
     context.user_data['previous_menu'] = f"container:{container_id}"
-    await query.message.edit_text(text="*➕ وضع الإضافة*\n\nأرسل ملفاتك، صورك، أو رسائلك\. عند الانتهاء، اضغط /done لحفظها أو /cancel للإلغاء\.", parse_mode='MarkdownV2')
+    await query.message.edit_text(text="*➕ وضع الإضافة*\n\nأرسل ملفاتك، صورك، أو رسائلك\. \nعند الانتهاء، اضغط /done لحفظها أو /cancel للإلغاء\.", parse_mode='MarkdownV2')
     return AWAITING_ITEMS_FOR_UPLOAD
 
 
@@ -492,7 +499,7 @@ async def collect_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if 'items_to_add_buffer' not in context.user_data:
         context.user_data['items_to_add_buffer'] = []
     context.user_data['items_to_add_buffer'].append(update.message)
-    await update.message.reply_text("👍 تم الاستلام. أرسل المزيد أو اضغط /done للحفظ\.", parse_mode='MarkdownV2')
+    await update.message.reply_text("👍 تم الاستلام\. أرسل المزيد أو اضغط /done للحفظ\.", parse_mode='MarkdownV2')
     return AWAITING_ITEMS_FOR_UPLOAD
 
 async def save_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

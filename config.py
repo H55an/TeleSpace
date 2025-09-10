@@ -13,7 +13,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # جلب بقية الإعدادات
 STORAGE_CHANNEL_ID = -1003046683134
-DB_NAME = "telespace_db" # هذا لن نستخدمه في الاستضافة، لكن يمكن إبقاؤه
 
 # تأكد من أن المتغيرات الأساسية موجودة
 if not TELEGRAM_BOT_TOKEN or not DATABASE_URL:
