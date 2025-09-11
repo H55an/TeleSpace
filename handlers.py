@@ -258,6 +258,29 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         text = f"✅ {title}:\n\n`{share_link}`"
         await query.message.edit_text(text, reply_markup=kb.back_button(f"share_menu_container:{container_id}"), parse_mode='MarkdownV2')
 
+    elif data.startswith("statistics_container:"):
+        container_id = int(data.split(':')[1])
+        if not db.container_exists(container_id):
+            await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
+            return await query.message.delete()
+        
+        details = db.get_container_details(container_id)
+        stats = db.get_container_statistics(container_id)
+        
+        text = f"""📊 *إحصائيات: {escape_markdown(details['name'], version=2)}*
+
+\- عدد المشرفين: *{stats['admin_count']}*
+\- إجمالي المشتركين: *{stats['subscriber_count']}*
+
+_لا تشمل هذه الإحصائيات المالك \._
+"""
+        
+        await query.message.edit_text(
+            text,
+            reply_markup=kb.back_button(f"share_menu_container:{container_id}"),
+            parse_mode='MarkdownV2'
+        )
+
     # --- Deletion ---
     elif data.startswith("delete_container_prompt:"):
         container_id = int(data.split(':')[1])

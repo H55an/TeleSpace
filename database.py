@@ -660,3 +660,45 @@ def get_shared_containers_for_user(user_id: int):
     finally:
         if conn:
             conn.close()
+
+def get_container_statistics(container_id: int) -> dict:
+    """
+    [جديد] يحسب إحصائيات الحاوية: عدد المشتركين وعدد المشرفين.
+    """
+    stats = {'admin_count': 0, 'subscriber_count': 0}
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return stats
+
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            # First, get the owner's ID
+            cursor.execute("SELECT owner_user_id FROM containers WHERE id = %s", (container_id,))
+            owner_result = cursor.fetchone()
+            if not owner_result:
+                return stats # Container not found
+            owner_id = owner_result['owner_user_id']
+
+            # Count admins (excluding the owner)
+            cursor.execute(
+                "SELECT COUNT(*) FROM permissions WHERE content_id = %s AND permission_level = 'admin' AND user_id != %s",
+                (container_id, owner_id)
+            )
+            stats['admin_count'] = cursor.fetchone()[0]
+
+            # Count all subscribers (admins + viewers, excluding the owner)
+            # This counts distinct users to avoid double counting if a user has multiple entries for some reason
+            cursor.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM permissions WHERE content_id = %s AND user_id != %s",
+                (container_id, owner_id)
+            )
+            stats['subscriber_count'] = cursor.fetchone()[0]
+            
+            return stats
+            
+    except psycopg2.Error as e:
+        print(f"DB Error in get_container_statistics: {e}")
+        return stats # Return default stats on error
+    finally:
+        if conn:
+            conn.close()

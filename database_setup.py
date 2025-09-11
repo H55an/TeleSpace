@@ -11,10 +11,7 @@ def setup_database():
     try:
         # 1. Connect to the PostgreSQL database
         conn = psycopg2.connect(
-            dbname=config.DB_NAME,
-            user=config.DB_USER,
-            password=config.DB_PASS,
-            host=config.DB_HOST
+            config.DATABASE_URL
         )
         print("Successfully connected to the database.")
 
