@@ -589,6 +589,34 @@ def grant_permission(user_id: int, content_type: str, content_id: int, new_permi
         if conn:
             conn.close()
 
+
+def grant_viewer_permission_for_section(user_id: int, section_id: int):
+    """
+    [جديد] يمنح صلاحية مشاهدة لقسم معين بشكل آمن.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return
+
+        with conn.cursor() as cursor:
+            # يضيف الصلاحية فقط إذا لم تكن موجودة، أو يتجاهل الأمر إذا كانت موجودة
+            # هذا يمنع تخفيض صلاحية المشرف إلى مشاهد
+            query = """
+                INSERT INTO permissions (user_id, content_type, content_id, permission_level)
+                VALUES (%s, 'section', %s, 'viewer')
+                ON CONFLICT (user_id, content_id, content_type) DO NOTHING;
+            """
+            cursor.execute(query, (user_id, section_id))
+            if cursor.rowcount > 0:
+                _log_activity(cursor, user_id, 'GRANT_PERMISSION', section_id, 'section', "Level: viewer (via channel button)")
+            conn.commit()
+    except psycopg2.Error as e:
+        print(f"DB Error in grant_viewer_permission_for_section: {e}")
+    finally:
+        if conn:
+            conn.close()
+
 def revoke_permission(user_id: int, content_type: str, content_id: int):
     conn = None
     try:
@@ -912,6 +940,51 @@ def is_message_archived(channel_id: int, message_id: int, container_id: int) -> 
     except psycopg2.Error as e:
         print(f"DB Error in is_message_archived: {e}")
         return True # Fail safe to prevent duplicates on error
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_archived_folders_for_message(channel_id: int, message_id: int) -> dict:
+    """
+    [جديد] يجلب كل المجلدات التي تم أرشفة رسالة معينة فيها مع معرّف العنصر.
+    Returns a dictionary of {folder_id: item_id}.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return {}
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT container_id, item_id FROM archived_messages WHERE channel_id = %s AND message_id = %s",
+                (channel_id, message_id)
+            )
+            # Use a dictionary for quick lookups
+            return {row[0]: row[1] for row in cursor.fetchall()}
+    except psycopg2.Error as e:
+        print(f"DB Error in get_archived_folders_for_message: {e}")
+        return {}
+    finally:
+        if conn:
+            conn.close()
+
+
+def remove_archived_message(channel_id: int, message_id: int, container_id: int):
+    """
+    [جديد] يزيل سجل رسالة مؤرشفة من مجلد معين.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM archived_messages WHERE channel_id = %s AND message_id = %s AND container_id = %s",
+                (channel_id, message_id, container_id)
+            )
+            conn.commit()
+    except psycopg2.Error as e:
+        print(f"DB Error in remove_archived_message: {e}")
     finally:
         if conn:
             conn.close()

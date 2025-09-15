@@ -214,3 +214,22 @@ def back_button(callback_data: str) -> InlineKeyboardMarkup:
     [جديد] ينشئ زر رجوع بسيط.
     """
     return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=callback_data)]])
+
+
+def build_channel_post_keyboard(folders: list, section_id: int, bot_username: str) -> InlineKeyboardMarkup | None:
+    """
+    [جديد] يبني لوحة أزرار تفاعلية للرسالة في القناة.
+    """
+    if not folders:
+        return None
+
+    buttons = []
+    for folder in folders:
+        # كل زر هو رابط عميق يوجه المستخدم إلى المجلد داخل البوت
+        url = f"https://t.me/{bot_username}?start=folder_{section_id}_{folder['id']}"
+        buttons.append(InlineKeyboardButton(text=f"📁 {folder['name']}", url=url))
+    
+    # تنظيم الأزرار في صفوف، كل صف يحتوي على زرين
+    keyboard_layout = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    
+    return InlineKeyboardMarkup(keyboard_layout)

@@ -180,11 +180,31 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
 
 # --- Main Interface and Browsing ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """[معدل] يبدأ البوت ويعالج روابط المشاركة."""
-    context.user_data.clear() 
+    """[معدل] يبدأ البوت ويعالج روابط المشاركة والروابط العميقة للقنوات."""
     user = update.effective_user
     db.add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
 
+    # [جديد] معالجة الروابط العميقة من أزرار القنوات
+    if context.args and context.args[0].startswith("folder_"):
+        try:
+            _, section_id_str, folder_id_str = context.args[0].split('_')
+            section_id = int(section_id_str)
+            folder_id = int(folder_id_str)
+
+            # منح المستخدم صلاحية مشاهدة للقسم الرئيسي تلقائيًا
+            db.grant_viewer_permission_for_section(user.id, section_id)
+            
+            # مسح بيانات المحادثة السابقة ونقل المستخدم مباشرة إلى المجلد
+            context.user_data.clear()
+            await show_container(update, context, folder_id)
+            return ConversationHandler.END
+        except (ValueError, IndexError) as e:
+            print(f"Error processing deep link: {e}")
+            # في حالة الخطأ، يتم توجيهه إلى القائمة الرئيسية
+            pass # Fall through to the main menu
+
+    # معالجة روابط المشاركة الحالية
+    context.user_data.clear()
     if context.args:
         token = context.args[0]
         share = db.get_share_by_token(token)
@@ -211,12 +231,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         else:
             await update.message.reply_text("⚠️ عذرًا، الرابط غير صالح أو مستخدم.")
 
+    # عرض القائمة الرئيسية
     first_name = escape_markdown(user.first_name, version=2)
     keyboard = kb.main_menu_keyboard()
     reply_text = f"""
-مرحبًا {first_name}، يسعدنا تواجدك في *TeleSpace* \!
+مرحبًا {first_name}، يسعدنا تواجدك في *TeleSpace* \! 
 
-مساحتك الرقمية على Telegram لتحويل الفوضى إلى مساحة عمل منظمة \.
+مساحتك الرقمية على Telegram لتحويل الفوضى إلى مساحة عمل منظمة \. 
 
 🗂️ *نظّم* أفكارك ومشاريعك\.
 💾 *احفظ* ملفاتك ورسائلك المهمة\.
@@ -813,59 +834,95 @@ async def receive_channel_forward(update: Update, context: ContextTypes.DEFAULT_
     return ConversationHandler.END
 
 async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """[مصحح] يعالج الرسائل الجديدة والمعدلة في القنوات المراقبة."""
+    """[مطور] يعالج الرسائل في القنوات المراقبة، ويدير الأرشفة والأزرار التفاعلية."""
     message = update.effective_message
     if not message:
         return
 
     channel_id = message.chat.id
+    message_id = message.message_id
 
-    # Use a simple, time-based cache for watched channels to reduce DB queries
-    current_time = asyncio.get_running_loop().time()
+    # جلب كل الروابط المفعلة للمراقبة (مع استخدام الكاش)
     cache_key = 'watching_links_cache'
-    if cache_key not in context.bot_data or (current_time - context.bot_data[cache_key]['time']) > 60:
+    current_time = asyncio.get_running_loop().time()
+    if cache_key not in context.bot_data or (current_time - context.bot_data.get(cache_key, {}).get('time', 0)) > 60:
         watching_links = db.get_all_watching_channel_links()
         context.bot_data[cache_key] = {'links': watching_links, 'time': current_time}
     
     watching_links = context.bot_data[cache_key]['links']
 
-    relevant_links = [link for link in watching_links if link['channel_id'] == channel_id]
-    if not relevant_links:
+    # البحث عن القسم المرتبط بهذه القناة
+    relevant_link = next((link for link in watching_links if link['channel_id'] == channel_id), None)
+    if not relevant_link:
         return
 
+    section_id = relevant_link['container_id']
+    user_id = relevant_link['user_id'] # مالك القسم
+
+    # استخراج الهاشتاجات الحالية من الرسالة
     text = message.text or message.caption or ""
-    hashtags = set(re.findall(r"#(\w+)", text))
-    if not hashtags:
-        return
+    current_hashtags = set(re.findall(r"#(\w+)", text))
+    normalized_current_hashtags = {tag.replace('_', ' ').lower() for tag in current_hashtags}
 
-    for link in relevant_links:
-        container_id = link['container_id']
-        user_id = link['user_id'] # The user who owns the section
-        
-        # Get all folders inside the section recursively
-        all_folders = db.get_all_folders_recursively(container_id)
-        folder_map = {folder['name'].lower(): folder['id'] for folder in all_folders}
+    # جلب كل المجلدات المتاحة في القسم وهيكلتها للبحث السريع
+    all_folders_in_section = db.get_all_folders_recursively(section_id)
+    folder_name_map = {folder['name'].lower(): folder['id'] for folder in all_folders_in_section}
+    folder_id_map = {folder['id']: folder['name'] for folder in all_folders_in_section}
 
-        if not folder_map:
-            continue
+    # تحديد المجلدات التي تمت أرشفة الرسالة فيها سابقًا
+    previously_archived = db.get_archived_folders_for_message(channel_id, message_id)
+    previously_archived_ids = set(previously_archived.keys())
 
-        for hashtag in hashtags:
-            normalized_hashtag = hashtag.replace('_', ' ').lower()
-            
-            if normalized_hashtag in folder_map:
-                target_folder_id = folder_map[normalized_hashtag]
-                
-                # Prevent duplicates for both new and edited messages
-                if db.is_message_archived(channel_id, message.message_id, target_folder_id):
-                    continue
+    # تحديد المجلدات المطابقة للهاشتاجات الحالية
+    current_matched_folder_ids = {folder_name_map[ht] for ht in normalized_current_hashtags if ht in folder_name_map}
 
-                # Process and save the message
-                item_data = await process_message_for_saving(message)
-                if item_data:
-                    # Add the item to the matched folder
-                    item_id = db.add_item(container_id=target_folder_id, user_id=user_id, **item_data)
+    # حساب التغييرات: ما يجب إضافته وما يجب حذفه
+    folders_to_add = current_matched_folder_ids - previously_archived_ids
+    folders_to_remove = previously_archived_ids - current_matched_folder_ids
+
+    # 1. تنفيذ الحذف
+    for folder_id in folders_to_remove:
+        item_id_to_delete = previously_archived.get(folder_id)
+        if item_id_to_delete:
+            db.delete_item(item_id_to_delete, user_id)
+            db.remove_archived_message(channel_id, message_id, folder_id)
+            print(f"Removed item {item_id_to_delete} from folder {folder_id} for message {message_id}")
+
+    # 2. تنفيذ الإضافة
+    if folders_to_add:
+        # We only need to process the message for saving once
+        item_data = await process_message_for_saving(message)
+        if item_data:
+            for folder_id in folders_to_add:
+                # Double-check it wasn't added in a race condition
+                if folder_id not in previously_archived_ids:
+                    item_id = db.add_item(container_id=folder_id, user_id=user_id, **item_data)
                     if item_id:
-                        # Record that this message has been archived to prevent re-saving
-                        db.add_archived_message(channel_id, message.message_id, target_folder_id, item_id)
-                        print(f"Archived message {message.message_id} from channel {channel_id} to folder {target_folder_id}")
+                        db.add_archived_message(channel_id, message_id, folder_id, item_id)
+                        print(f"Archived message {message_id} to folder {folder_id} with item_id {item_id}")
+
+    # 3. تحديث الأزرار التفاعلية في القناة
+    final_archived_folder_ids = current_matched_folder_ids
+    
+    # إنشاء قائمة بالمجلدات النهائية لعرضها في الأزرار
+    final_folders_for_keyboard = [
+        {'id': fid, 'name': folder_id_map[fid]} 
+        for fid in final_archived_folder_ids 
+        if fid in folder_id_map
+    ]
+
+    try:
+        bot_username = (await context.bot.get_me()).username
+        keyboard = kb.build_channel_post_keyboard(final_folders_for_keyboard, section_id, bot_username)
+        
+        await context.bot.edit_message_reply_markup(
+            chat_id=channel_id,
+            message_id=message_id,
+            reply_markup=keyboard
+        )
+    except Forbidden as e:
+        print(f"Failed to edit reply markup for message {message_id} in channel {channel_id}. Reason: {e}")
+    except Exception as e:
+        # Other errors like "message to edit not found" can happen if the message is deleted quickly
+        print(f"An unexpected error occurred while editing reply markup: {e}")
 
