@@ -216,7 +216,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 💾 *احفظ* ملفاتك ورسائلك المهمة\.
 🤝 *شارك* محتواك بسهولة وأمان\.
     
-استكشف مساحتك أو ابدأ بتصفح ما شاركه الآخرون معك\.
+*استكشف مساحتك أو ابدأ بتصفح ما شاركه الآخرون معك*\.
+
+_ارسل /info لقرائة دليل استخدام TeleSpace_\.
 """
     
     if update.callback_query:
@@ -224,6 +226,44 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     else:
         await update.message.reply_text(reply_text, reply_markup=keyboard, parse_mode='MarkdownV2')
         
+    return ConversationHandler.END
+
+async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Sends a formatted guide and cancels any ongoing conversation."""
+    user_id = update.effective_user.id
+    db.update_user_last_active(user_id)
+
+    # Check if we are in a conversation and notify the user
+    if context.user_data:
+        context.user_data.clear()
+        await update.message.reply_text("✅ تم إلغاء العملية الحالية.")
+
+    info_text = """
+🤖 *دليل استخدام TeleSpace*
+
+أهلاً بك\! إليك كيفية الاستفادة القصوى من مساحتك الرقمية:
+
+*🗂️ نظّم مساحتك ببراعة*
+اذهب إلى "👤 مساحتي الخاصة" لإنشاء أقسام لمواضيعك الرئيسية \(مثل "العمل"، "الدراسة"\)\.
+للتنظيم المتقدم، يمكنك الدخول إلى أي قسم وإنشاء أقسام فرعية بداخله، مما يسمح لك ببناء هيكل تنظيمي متكامل لمشاريعك\. أخيرًا، أنشئ مجلدات داخل أي قسم لحفظ ملفاتك\.
+
+*📥 احفظ كل شيء بسهولة*
+داخل أي مجلد، اضغط "➕ إضافة عناصر" وأرسل ما تشاء من ملفات، صور، أو نصوص\. عند الانتهاء، اكتب `/done`\.
+
+*ملاحظة هامة*: تُستخدم المجلدات لحفظ ملفاتك ومحتوياتك ، وتُستخدم الأقسام لعمل تنظيم هرمي من الأقسام المتداخلة \.
+
+*🤝 شارك بذكاء وأمان*
+اضغط على زر "🔗" داخل أي قسم أو مجلد تملكه للوصول لخيارات المشاركة:
+
+*👁️ رابط مشاهدة \(للعرض فقط\):*
+*ما هو؟* رابط دائم يمكن لأي شخص من الوصول لمحتويات القسم/المجلد دون القدرة على تعديله أو حذفه\.
+*متى تستخدمه؟* مثالي لمشاركة محتواك مع آلاف المستخدمين \.
+
+*👥 دعوة مشرف \(للتعديل والإضافة\):*
+*ما هو؟* رابط يُستخدم لمرة واحدة فقط لدعوة شخص ليصبح مشرفًا على المجلد أو القسم\.
+*متى تستخدمه؟* مثالي للعمل المشترك على المشاريع، حيث يحتاج زميلك لإضافة ملفات أو تعديل المحتوى\.
+"""
+    await update.message.reply_text(info_text, parse_mode='MarkdownV2', reply_markup=kb.back_button("back_to_main"))
     return ConversationHandler.END
 
 async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

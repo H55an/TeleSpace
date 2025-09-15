@@ -30,14 +30,14 @@ def main() -> None:
             CallbackQueryHandler(handlers.new_container_prompt, pattern="^new_container_sub:")
         ],
         states={AWAITING_CONTAINER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_container_name)]},
-        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
+        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation), CommandHandler("info", handlers.info), CommandHandler("start", handlers.start)]
     )
 
     # معالج محادثة موحد لإعادة تسمية الحاويات
     rename_container_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(handlers.rename_container_prompt, pattern="^rename_container:")],
         states={AWAITING_RENAME_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_new_container_name)]},
-        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
+        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation), CommandHandler("info", handlers.info), CommandHandler("start", handlers.start)]
     )
 
     # معالج محادثة إضافة العناصر إلى مجلد
@@ -49,7 +49,7 @@ def main() -> None:
                 MessageHandler(filters.ALL & ~filters.COMMAND, handlers.collect_items)
             ]
         },
-        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation)]
+        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation), CommandHandler("info", handlers.info), CommandHandler("start", handlers.start)]
     )
 
     # تسجيل كل المعالجات في التطبيق
@@ -59,6 +59,7 @@ def main() -> None:
     
     # ثم يتم تسجيل الأوامر والمعالج العام للأزرار
     application.add_handler(CommandHandler("start", handlers.start))
+    application.add_handler(CommandHandler("info", handlers.info))
     application.add_handler(CallbackQueryHandler(handlers.button_press_router))
     
     # 3. تشغيل البوت
