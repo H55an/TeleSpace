@@ -147,7 +147,10 @@ def build_settings_keyboard(container_id: int, user_id: int) -> InlineKeyboardMa
         [InlineKeyboardButton("✏️ إعادة تسمية", callback_data=f"rename_container:{container_id}")],
         [InlineKeyboardButton("🗑️ حذف", callback_data=f"delete_container_prompt:{container_id}")]
     ]
-    
+
+    # [جديد] إضافة زر الأتمتة التلقائية للأقسام المملوكة
+    if details['type'] == 'section' and permission == 'owner':
+        keyboard.insert(0, [InlineKeyboardButton("🤖 الأتمتة التلقائية", callback_data=f"channel_watch:{container_id}")])
 
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")])
     return InlineKeyboardMarkup(keyboard)
@@ -163,6 +166,35 @@ def build_share_menu_keyboard(container_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("📊 إحصائيات", callback_data=f"statistics_container:{container_id}")],
         [InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")]
     ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def build_channel_watch_keyboard(container_id: int) -> InlineKeyboardMarkup:
+    """
+    [جديد] يبني لوحة مفاتيح التحكم في ميزة الأتمتة التلقائية.
+    """
+    link = db.get_channel_link_by_container(container_id)
+    keyboard = []
+
+    if not link:
+        # لم يتم ربط أي قناة بعد
+        keyboard.append([InlineKeyboardButton("🔗 ربط بقناة", callback_data=f"link_channel_start:{container_id}")])
+    else:
+        # تم ربط قناة
+        if link['is_watching']:
+            keyboard.append([InlineKeyboardButton("⏸️ إيقاف المراقبة", callback_data=f"stop_watch:{container_id}")])
+        else:
+            keyboard.append([InlineKeyboardButton("👁️ بدء المراقبة", callback_data=f"start_watch:{container_id}")])
+        
+        # أزرار التحكم بالرابط
+        control_buttons = [
+            InlineKeyboardButton("🗑️ إلغاء الربط", callback_data=f"unlink_channel_prompt:{container_id}"),
+            # زر تغيير القناة يمكن إضافته لاحقًا
+            # InlineKeyboardButton("🔄 تغيير القناة", callback_data=f"relink_channel_start:{container_id}")
+        ]
+        keyboard.append(control_buttons)
+
+    keyboard.append([InlineKeyboardButton("🔙 رجوع للإعدادات", callback_data=f"settings_container:{container_id}")])
     return InlineKeyboardMarkup(keyboard)
 
 

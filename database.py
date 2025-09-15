@@ -208,6 +208,46 @@ def get_child_containers(parent_id: int):
         if conn:
             conn.close()
 
+def get_all_folders_recursively(parent_id: int) -> list:
+    """
+    [جديد] يجلب كل المجلدات (وليس الأقسام) الموجودة تحت حاوية أصل معينة بشكل متعمق.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return []
+
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            # استخدام استعلام متكرر (CTE) لاجتياز التسلسل الهرمي
+            query = """
+                WITH RECURSIVE container_hierarchy AS (
+                    -- الجزء الأساسي: الحاويات المباشرة تحت الأصل
+                    SELECT id, type
+                    FROM containers
+                    WHERE parent_id = %s
+
+                    UNION ALL
+
+                    -- الجزء المتكرر: أبناء الحاويات التي تم العثور عليها في الخطوة السابقة
+                    SELECT c.id, c.type
+                    FROM containers c
+                    JOIN container_hierarchy ch ON c.parent_id = ch.id
+                )
+                -- اختيار المجلدات فقط من التسلسل الهرمي بأكمله
+                SELECT c.id, c.name
+                FROM containers c
+                JOIN container_hierarchy ch ON c.id = ch.id
+                WHERE c.type = 'folder';
+            """
+            cursor.execute(query, (parent_id,))
+            return cursor.fetchall()
+    except psycopg2.Error as e:
+        print(f"DB Error in get_all_folders_recursively: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
 def get_container_path(container_id: int) -> list:
     path = []
     current_id = container_id
@@ -290,14 +330,14 @@ def get_parent_container_id(container_id: int) -> int | None:
             conn.close()
 
 # --- Item Functions ---
-def add_item(container_id: int, user_id: int, item_name: str, item_type: str, content: str, file_unique_id: str = None, file_id: str = None):
+def add_item(container_id: int, user_id: int, item_name: str, item_type: str, content: str, file_unique_id: str = None, file_id: str = None) -> int | None:
     """
-    Adds an item to a container and logs the activity.
+    Adds an item to a container, logs the activity, and returns the new item's ID.
     """
     conn = None
     try:
         conn = get_db_connection()
-        if not conn: return
+        if not conn: return None
 
         with conn.cursor() as cursor:
             cursor.execute(
@@ -307,8 +347,10 @@ def add_item(container_id: int, user_id: int, item_name: str, item_type: str, co
             item_id = cursor.fetchone()[0]
             _log_activity(cursor, user_id, 'ADD_ITEM', item_id, 'item', f"Name: {item_name} in container {container_id}")
             conn.commit()
+            return item_id
     except psycopg2.Error as e:
         print(f"DB Error in add_item: {e}")
+        return None
     finally:
         if conn:
             conn.close()
@@ -699,6 +741,177 @@ def get_container_statistics(container_id: int) -> dict:
     except psycopg2.Error as e:
         print(f"DB Error in get_container_statistics: {e}")
         return stats # Return default stats on error
+    finally:
+        if conn:
+            conn.close()
+
+# --- Channel Watch Functions ---
+
+def add_channel_link(container_id: int, user_id: int, channel_id: int, channel_name: str) -> bool:
+    """
+    Adds or updates a channel link for a container.
+    Uses ON CONFLICT to handle re-linking gracefully.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return False
+        with conn.cursor() as cursor:
+            # This query will insert a new link or update an existing one for the same container_id.
+            # It resets the watching status and updates the channel info.
+            query = """
+                INSERT INTO channel_links (container_id, user_id, channel_id, channel_name, is_watching, link_date)
+                VALUES (%s, %s, %s, %s, FALSE, NOW())
+                ON CONFLICT (container_id) DO UPDATE SET
+                    channel_id = EXCLUDED.channel_id,
+                    channel_name = EXCLUDED.channel_name,
+                    user_id = EXCLUDED.user_id,
+                    is_watching = FALSE, -- Always reset watching status on a new link/re-link
+                    link_date = NOW();
+            """
+            cursor.execute(query, (container_id, user_id, channel_id, channel_name))
+            _log_activity(cursor, user_id, 'LINK_CHANNEL', container_id, 'container', f"Channel ID: {channel_id}")
+            conn.commit()
+            return True
+    except psycopg2.Error as e:
+        # This can still fail if the channel_id is already linked to a *different* container
+        # due to the UNIQUE constraint on channel_id. This case is handled in the application logic.
+        if e.pgcode == '23505': # unique_violation
+            print(f"DB Warning in add_channel_link: Unique constraint violation. This is expected if the channel is already linked elsewhere. {e}")
+        else:
+            print(f"DB Error in add_channel_link: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_channel_link_by_container(container_id: int):
+    """Fetches channel link details by container ID."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return None
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute("SELECT * FROM channel_links WHERE container_id = %s", (container_id,))
+            return cursor.fetchone()
+    except psycopg2.Error as e:
+        print(f"DB Error in get_channel_link_by_container: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_channel_link_by_channel_id(channel_id: int):
+    """Fetches channel link details by channel ID."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return None
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute("SELECT * FROM channel_links WHERE channel_id = %s", (channel_id,))
+            return cursor.fetchone()
+    except psycopg2.Error as e:
+        print(f"DB Error in get_channel_link_by_channel_id: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_all_watching_channel_links() -> list:
+    """Gets all channel links that are currently being watched."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return []
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute("SELECT * FROM channel_links WHERE is_watching = TRUE")
+            return cursor.fetchall()
+    except psycopg2.Error as e:
+        print(f"DB Error in get_all_watching_channel_links: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def update_watching_status(container_id: int, is_watching: bool, user_id: int) -> bool:
+    """Updates the watching status for a channel link."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return False
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE channel_links SET is_watching = %s WHERE container_id = %s",
+                (is_watching, container_id)
+            )
+            activity = 'START_CHANNEL_WATCH' if is_watching else 'STOP_CHANNEL_WATCH'
+            _log_activity(cursor, user_id, activity, container_id, 'container')
+            conn.commit()
+            return True
+    except psycopg2.Error as e:
+        print(f"DB Error in update_watching_status: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def delete_channel_link(container_id: int, user_id: int) -> bool:
+    """Deletes a channel link."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return False
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM channel_links WHERE container_id = %s", (container_id,))
+            _log_activity(cursor, user_id, 'UNLINK_CHANNEL', container_id, 'container')
+            conn.commit()
+            return True
+    except psycopg2.Error as e:
+        print(f"DB Error in delete_channel_link: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def add_archived_message(channel_id: int, message_id: int, container_id: int, item_id: int) -> bool:
+    """Adds a record of an archived message to prevent duplicates."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return False
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO archived_messages (channel_id, message_id, container_id, item_id) VALUES (%s, %s, %s, %s)",
+                (channel_id, message_id, container_id, item_id)
+            )
+            conn.commit()
+            return True
+    except psycopg2.Error as e:
+        # It's okay if this fails due to a unique constraint violation. 
+        # This can happen in race conditions and is not a critical error.
+        if e.pgcode != '23505': # 23505 is unique_violation
+             print(f"DB Error in add_archived_message: {e}")
+        if conn: conn.rollback() # Rollback the failed transaction
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def is_message_archived(channel_id: int, message_id: int, container_id: int) -> bool:
+    """Checks if a specific message has already been archived in a specific container."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return True # Fail safe
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT 1 FROM archived_messages WHERE channel_id = %s AND message_id = %s AND container_id = %s",
+                (channel_id, message_id, container_id)
+            )
+            return cursor.fetchone() is not None
+    except psycopg2.Error as e:
+        print(f"DB Error in is_message_archived: {e}")
+        return True # Fail safe to prevent duplicates on error
     finally:
         if conn:
             conn.close()

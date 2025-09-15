@@ -1,5 +1,6 @@
 # main.py
 
+from telegram import Update
 from telegram.ext import (
     Application, 
     CommandHandler, 
@@ -52,10 +53,22 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", handlers.cancel_conversation), CommandHandler("info", handlers.info), CommandHandler("start", handlers.start)]
     )
 
+    # [جديد] معالج محادثة لربط القنوات
+    link_channel_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(handlers.link_channel_start, pattern="^link_channel_start:")],
+        states={AWAITING_CHANNEL_FORWARD: [MessageHandler(filters.FORWARDED & filters.ChatType.PRIVATE, handlers.receive_channel_forward)]},
+        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation), CommandHandler("info", handlers.info), CommandHandler("start", handlers.start)]
+    )
+
     # تسجيل كل المعالجات في التطبيق
     application.add_handler(create_container_conv)
     application.add_handler(rename_container_conv)
     application.add_handler(add_items_conv)
+    application.add_handler(link_channel_conv)
+    
+    # [مصحح] معالج رسائل القنوات للمراقبة (للرسائل الجديدة والمعدلة)
+    application.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, handlers.channel_post_handler))
+    application.add_handler(MessageHandler(filters.UpdateType.EDITED_CHANNEL_POST, handlers.channel_post_handler))
     
     # ثم يتم تسجيل الأوامر والمعالج العام للأزرار
     application.add_handler(CommandHandler("start", handlers.start))
@@ -64,7 +77,7 @@ def main() -> None:
     
     # 3. تشغيل البوت
     print("Bot is running... Press Ctrl+C to stop.")
-    application.run_polling()
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()

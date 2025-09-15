@@ -1,9 +1,11 @@
 # handlers.py
 
 import asyncio
+import re
 from telegram import Update, InlineKeyboardMarkup, Message, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.helpers import escape_markdown
+from telegram.error import Forbidden
 
 import config
 import database as db
@@ -71,7 +73,7 @@ async def show_container(update: Update, context: ContextTypes.DEFAULT_TYPE, con
         await update.message.reply_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
 
 async def process_message_for_saving(message: Message) -> dict | None:
-    """[معدل] يعالج الرسائل لتحويلها إلى بيانات قابلة للحفظ بطريقة آمنة."""
+    """[معدل ومصحح] يعالج الرسائل لتحويلها إلى بيانات قابلة للحفظ بطريقة آمنة."""
     file_type, file_obj = None, None
     if message.document: (file_type, file_obj) = ('document', message.document)
     elif message.video: (file_type, file_obj) = ('video', message.video)
@@ -80,7 +82,11 @@ async def process_message_for_saving(message: Message) -> dict | None:
     elif message.voice: (file_type, file_obj) = ('voice', message.voice)
 
     if file_type and file_obj:
-        fwd_msg = await message.forward(chat_id=config.STORAGE_CHANNEL_ID)
+        try:
+            fwd_msg = await message.forward(chat_id=config.STORAGE_CHANNEL_ID)
+        except Forbidden:
+            print(f"Error: Bot is not an admin in the storage channel {config.STORAGE_CHANNEL_ID} or cannot forward messages.")
+            return None
         
         fwd_file_obj = None
         if fwd_msg:
@@ -349,6 +355,38 @@ _لا تشمل هذه الإحصائيات المالك \._
             reply_markup=kb.back_button(f"share_menu_container:{container_id}"),
             parse_mode='MarkdownV2'
         )
+
+    # --- Channel Watch ---
+    elif data.startswith("channel_watch:"):
+        container_id = int(data.split(':')[1])
+        await show_channel_watch_menu(update, context, container_id)
+
+    elif data.startswith("start_watch:"):
+        container_id = int(data.split(':')[1])
+        db.update_watching_status(container_id, True, user_id)
+        await query.answer("✅ تم بدء المراقبة.")
+        await show_channel_watch_menu(update, context, container_id)
+
+    elif data.startswith("stop_watch:"):
+        container_id = int(data.split(':')[1])
+        db.update_watching_status(container_id, False, user_id)
+        await query.answer("⏸️ تم إيقاف المراقبة.")
+        await show_channel_watch_menu(update, context, container_id)
+
+    elif data.startswith("unlink_channel_prompt:"):
+        container_id = int(data.split(':')[1])
+        text = "⚠️ هل أنت متأكد من إلغاء ربط القناة؟ سيتم إيقاف الأتمتة."
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔥 نعم، إلغاء الربط", callback_data=f"unlink_channel_confirm:{container_id}")],
+            [InlineKeyboardButton("❌ تراجع", callback_data=f"channel_watch:{container_id}")]
+        ])
+        await query.message.edit_text(text, reply_markup=keyboard)
+
+    elif data.startswith("unlink_channel_confirm:"):
+        container_id = int(data.split(':')[1])
+        db.delete_channel_link(container_id, user_id)
+        await query.answer("✅ تم إلغاء ربط القناة بنجاح.")
+        await show_channel_watch_menu(update, context, container_id)
 
     # --- Deletion ---
     elif data.startswith("delete_container_prompt:"):
@@ -638,3 +676,196 @@ async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await start(update, context)
     return ConversationHandler.END
+
+# --- Channel Watch Handlers ---
+
+async def show_channel_watch_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, container_id: int):
+    """[مصحح] يعرض قائمة التحكم في الأتمتة التلقائية."""
+    # This function can be called from a conversation handler (no query) or a button press (query)
+    query = update.callback_query
+    user_id = update.effective_user.id
+    
+    # Ensure the container exists and the user is the owner
+    details = db.get_container_details(container_id)
+    if not details or details['owner_user_id'] != user_id:
+        if query:
+            await query.answer("ليس لديك الصلاحية للوصول إلى هنا.", show_alert=True)
+        else:
+            await context.bot.send_message(user_id, "ليس لديك الصلاحية للوصول إلى هنا.")
+        return
+
+    link = db.get_channel_link_by_container(container_id)
+    text = f"🤖 *الأتمتة التلقائية للقسم: {escape_markdown(details['name'], version=2)}*\n\n"
+
+    if not link:
+        text += "لم يتم ربط أي قناة بعد\. يمكنك ربط قناة عامة أو خاصة أنت مشرف بها\.\n\n"
+        text += "سيقوم البوت بأرشفة الرسائل الجديدة أو المعدلة من القناة التي تحتوي على هاشتاجات تتطابق مع أسماء المجلدات داخل هذا القسم\."
+    else:
+        status = "مفعلة" if link['is_watching'] else "متوقفة"
+        text += f"القناة المرتبطة: *{escape_markdown(link['channel_name'], version=2)}*\n"
+        text += f"حالة المراقبة: *{status}*"
+
+    keyboard = kb.build_channel_watch_keyboard(container_id)
+    
+    # Use query if available, otherwise send a new message
+    if query:
+        await query.message.edit_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
+    else:
+        # This case happens if we return from the conversation handler
+        await context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard, parse_mode='MarkdownV2')
+
+
+async def link_channel_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """[جديد] يبدأ محادثة ربط القناة."""
+    query = update.callback_query
+    container_id = int(query.data.split(':')[1])
+    
+    # Security check: ensure user owns the container
+    details = db.get_container_details(container_id)
+    if not details or details['owner_user_id'] != query.from_user.id:
+        await query.answer("فقط مالك القسم يمكنه ربط القنوات.", show_alert=True)
+        return ConversationHandler.END
+
+    context.user_data['channel_watch_container_id'] = container_id
+    # Set a specific previous_menu for channel flow cancellation
+    context.user_data['previous_menu'] = f"channel_watch:{container_id}"
+
+    text = """
+*🔗 لربط قناة، اتبع الخطوات التالية:*
+
+1\. تأكد من أن البوت عضو في القناة المستهدفة\.
+2\. تأكد من أنك *مشرف* أو *مالك* في القناة\.
+3\. قم بإعادة توجيه *أي رسالة* من القناة إلى هنا\.
+
+*لإلغاء العملية، أرسل /cancel*\.
+    """
+    await query.message.edit_text(text, parse_mode='MarkdownV2')
+    return AWAITING_CHANNEL_FORWARD
+
+async def receive_channel_forward(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """[مصحح] يعالج الرسالة المعاد توجيهها للتحقق من القناة وربطها."""
+    user_id = update.effective_user.id
+    container_id = context.user_data.get('channel_watch_container_id')
+
+    if not container_id:
+        await update.message.reply_text("⚠️ حدث خطأ ما. يرجى المحاولة مرة أخرى بالدخول إلى إعدادات القسم.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    origin = update.message.forward_origin
+    if not origin:
+        await update.message.reply_text(
+            "⚠️ هذه ليست رسالة معاد توجيهها. يرجى إعادة توجيه رسالة من قناة.\n\nأو أرسل /cancel للإلغاء."
+        )
+        return AWAITING_CHANNEL_FORWARD
+
+    if origin.type != 'channel':
+        await update.message.reply_text(
+            "⚠️ يمكنك فقط ربط القنوات، وليس المجموعات أو المستخدمين. يرجى المحاولة مرة أخرى.\n\nأو أرسل /cancel للإلغاء."
+        )
+        return AWAITING_CHANNEL_FORWARD
+
+    # Now we know origin is MessageOriginChannel
+    channel = origin.chat
+    channel_id = channel.id
+    channel_name = channel.title
+
+    # Check if this channel is already linked to another section
+    existing_link = db.get_channel_link_by_channel_id(channel_id)
+    if existing_link and existing_link['container_id'] != container_id:
+        await update.message.reply_text(f"⚠️ هذه القناة مرتبطة بالفعل بقسم آخر. لا يمكن ربط نفس القناة مرتين.")
+        context.user_data.clear()
+        await show_channel_watch_menu(update, context, container_id)
+        return ConversationHandler.END
+
+    # Check if the bot is in the channel
+    try:
+        bot_member = await context.bot.get_chat_member(channel_id, context.bot.id)
+        # The bot only needs to be a member to receive messages. It doesn't need admin rights to read.
+        if bot_member.status not in ['administrator', 'member']:
+            raise Forbidden("Bot is not a member")
+    except Forbidden:
+        await update.message.reply_text("⚠️ لم يتم العثور على البوت في القناة. يرجى إضافته كمشرف أولاً ثم إعادة المحاولة.")
+        return AWAITING_CHANNEL_FORWARD
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ خطأ غير متوقع ، يرجى التحقق من صلاحيات البوت كمشرف في القناة: {e}")
+        return AWAITING_CHANNEL_FORWARD
+
+    # Check if the user linking the channel is an admin or creator
+    try:
+        user_member = await context.bot.get_chat_member(channel_id, user_id)
+        if user_member.status not in ['creator', 'administrator']:
+            await update.message.reply_text("⚠️ يجب أن تكون مشرفًا أو مالكًا في القناة لتتمكن من ربطها.")
+            return AWAITING_CHANNEL_FORWARD
+    except Forbidden:
+        await update.message.reply_text("⚠️ لا يمكنني التحقق من صلاحياتك. هل أنت متأكد أنك عضو في القناة؟")
+        return AWAITING_CHANNEL_FORWARD
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ خطأ غير متوقع أثناء التحقق من صلاحياتك في القناة: {e}")
+        return AWAITING_CHANNEL_FORWARD
+
+    # All checks passed, link the channel
+    db.add_channel_link(container_id, user_id, channel_id, channel_name)
+    await update.message.reply_text(f"✅ تم ربط القناة '{escape_markdown(channel_name, version=2)}' بنجاح\!", parse_mode='MarkdownV2')
+    
+    context.user_data.clear()
+    await show_channel_watch_menu(update, context, container_id)
+    return ConversationHandler.END
+
+async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """[مصحح] يعالج الرسائل الجديدة والمعدلة في القنوات المراقبة."""
+    message = update.effective_message
+    if not message:
+        return
+
+    channel_id = message.chat.id
+
+    # Use a simple, time-based cache for watched channels to reduce DB queries
+    current_time = asyncio.get_running_loop().time()
+    cache_key = 'watching_links_cache'
+    if cache_key not in context.bot_data or (current_time - context.bot_data[cache_key]['time']) > 60:
+        watching_links = db.get_all_watching_channel_links()
+        context.bot_data[cache_key] = {'links': watching_links, 'time': current_time}
+    
+    watching_links = context.bot_data[cache_key]['links']
+
+    relevant_links = [link for link in watching_links if link['channel_id'] == channel_id]
+    if not relevant_links:
+        return
+
+    text = message.text or message.caption or ""
+    hashtags = set(re.findall(r"#(\w+)", text))
+    if not hashtags:
+        return
+
+    for link in relevant_links:
+        container_id = link['container_id']
+        user_id = link['user_id'] # The user who owns the section
+        
+        # Get all folders inside the section recursively
+        all_folders = db.get_all_folders_recursively(container_id)
+        folder_map = {folder['name'].lower(): folder['id'] for folder in all_folders}
+
+        if not folder_map:
+            continue
+
+        for hashtag in hashtags:
+            normalized_hashtag = hashtag.replace('_', ' ').lower()
+            
+            if normalized_hashtag in folder_map:
+                target_folder_id = folder_map[normalized_hashtag]
+                
+                # Prevent duplicates for both new and edited messages
+                if db.is_message_archived(channel_id, message.message_id, target_folder_id):
+                    continue
+
+                # Process and save the message
+                item_data = await process_message_for_saving(message)
+                if item_data:
+                    # Add the item to the matched folder
+                    item_id = db.add_item(container_id=target_folder_id, user_id=user_id, **item_data)
+                    if item_id:
+                        # Record that this message has been archived to prevent re-saving
+                        db.add_archived_message(channel_id, message.message_id, target_folder_id, item_id)
+                        print(f"Archived message {message.message_id} from channel {channel_id} to folder {target_folder_id}")
+
