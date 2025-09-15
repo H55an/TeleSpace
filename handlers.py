@@ -71,18 +71,46 @@ async def show_container(update: Update, context: ContextTypes.DEFAULT_TYPE, con
         await update.message.reply_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
 
 async def process_message_for_saving(message: Message) -> dict | None:
-    """[بدون تغيير] يعالج الرسائل لتحويلها إلى بيانات قابلة للحفظ."""
+    """[معدل] يعالج الرسائل لتحويلها إلى بيانات قابلة للحفظ بطريقة آمنة."""
     file_type, file_obj = None, None
     if message.document: (file_type, file_obj) = ('document', message.document)
     elif message.video: (file_type, file_obj) = ('video', message.video)
     elif message.photo: (file_type, file_obj) = ('photo', message.photo[-1])
     elif message.audio: (file_type, file_obj) = ('audio', message.audio)
+    elif message.voice: (file_type, file_obj) = ('voice', message.voice)
+
     if file_type and file_obj:
         fwd_msg = await message.forward(chat_id=config.STORAGE_CHANNEL_ID)
-        fwd_file_obj = fwd_msg.document or fwd_msg.video or fwd_msg.photo[-1] or fwd_msg.audio
-        return {'item_name': getattr(file_obj, 'file_name', f'ملف_{file_type}'), 'item_type': file_type, 'content': message.caption, 'file_unique_id': file_obj.file_unique_id, 'file_id': fwd_file_obj.file_id}
+        
+        fwd_file_obj = None
+        if fwd_msg:
+            if file_type == 'document' and fwd_msg.document: fwd_file_obj = fwd_msg.document
+            elif file_type == 'video' and fwd_msg.video: fwd_file_obj = fwd_msg.video
+            elif file_type == 'photo' and fwd_msg.photo: fwd_file_obj = fwd_msg.photo[-1]
+            elif file_type == 'audio' and fwd_msg.audio: fwd_file_obj = fwd_msg.audio
+            elif file_type == 'voice' and fwd_msg.voice: fwd_file_obj = fwd_msg.voice
+
+        if fwd_file_obj:
+            return {
+                'item_name': getattr(file_obj, 'file_name', f'ملف_{file_type}'),
+                'item_type': file_type,
+                'content': message.caption,
+                'file_unique_id': file_obj.file_unique_id,
+                'file_id': fwd_file_obj.file_id
+            }
+        else:
+            print(f"Could not get forwarded file object for a message of type {file_type}")
+            return None
+
     elif message.text:
-        return {'item_name': f"رسالة: {message.text[:20]}...", 'item_type': 'text', 'content': message.text, 'file_unique_id': None, 'file_id': None}
+        return {
+            'item_name': f"رسالة: {message.text[:20]}...",
+            'item_type': 'text',
+            'content': message.text,
+            'file_unique_id': None,
+            'file_id': None
+        }
+        
     return None
 
 async def view_and_send_container_contents(update: Update, context: ContextTypes.DEFAULT_TYPE, container_id: int, offset: int = 0):
@@ -125,7 +153,8 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
                     'document': context.bot.send_document,
                     'video': context.bot.send_video,
                     'photo': context.bot.send_photo,
-                    'audio': context.bot.send_audio
+                    'audio': context.bot.send_audio,
+                    'voice': context.bot.send_voice,
                 }
                 kwargs = {'caption': content, 'reply_markup': reply_markup, item_type: file_id}
                 await send_map[item_type](chat_id=chat_id, **kwargs)
@@ -536,7 +565,7 @@ async def save_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     if not message_buffer:
-        await update.message.reply_text("⚠️ لم ترسل أي عناصر. تم الخروج من وضع الإضافة.", reply_markup=kb.back_button(f"container:{container_id}"), parse_mode='MarkdownV2')
+        await update.message.reply_text("⚠️ لم ترسل أي عناصر. تم الخروج من وضع الإضافة.", reply_markup=kb.back_button(f"container:{container_id}"))
     else:
         await update.message.reply_text(f"📥 جاري حفظ {len(message_buffer)} عنصر...")
         count = 0
