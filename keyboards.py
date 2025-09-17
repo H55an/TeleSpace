@@ -148,9 +148,9 @@ def build_settings_keyboard(container_id: int, user_id: int) -> InlineKeyboardMa
         [InlineKeyboardButton("🗑️ حذف", callback_data=f"delete_container_prompt:{container_id}")]
     ]
 
-    # [جديد] إضافة زر الأتمتة التلقائية للأقسام المملوكة
+    # [معدل] Use the new automation menu
     if details['type'] == 'section' and permission == 'owner':
-        keyboard.insert(0, [InlineKeyboardButton("🤖 الأتمتة التلقائية", callback_data=f"channel_watch:{container_id}")])
+        keyboard.insert(0, [InlineKeyboardButton("🤖 الأتمتة", callback_data=f"automation_menu:{container_id}")])
 
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")])
     return InlineKeyboardMarkup(keyboard)
@@ -169,30 +169,28 @@ def build_share_menu_keyboard(container_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
-def build_channel_watch_keyboard(container_id: int) -> InlineKeyboardMarkup:
+def build_automation_keyboard(container_id: int) -> InlineKeyboardMarkup:
     """
-    [جديد] يبني لوحة مفاتيح التحكم في ميزة الأتمتة التلقائية.
+    [معدل وجديد] يبني لوحة مفاتيح التحكم في ميزة الأتمتة.
     """
-    link = db.get_channel_link_by_container(container_id)
+    linked_entity = db.get_linked_entity_by_container(container_id)
     keyboard = []
 
-    if not link:
-        # لم يتم ربط أي قناة بعد
-        keyboard.append([InlineKeyboardButton("🔗 ربط بقناة", callback_data=f"link_channel_start:{container_id}")])
+    if not linked_entity:
+        # No entity linked yet
+        keyboard.append([InlineKeyboardButton("🔗 ربط قناة", callback_data=f"link_channel_start:{container_id}")])
+        keyboard.append([InlineKeyboardButton("👥 ربط مجموعة", callback_data=f"link_group_start:{container_id}")])
     else:
-        # تم ربط قناة
-        if link['is_watching']:
-            keyboard.append([InlineKeyboardButton("⏸️ إيقاف المراقبة", callback_data=f"stop_watch:{container_id}")])
-        else:
-            keyboard.append([InlineKeyboardButton("👁️ بدء المراقبة", callback_data=f"start_watch:{container_id}")])
+        # An entity is linked
+        entity_type_str = "القناة" if linked_entity['entity_type'] == 'channel' else "المجموعة"
         
-        # أزرار التحكم بالرابط
-        control_buttons = [
-            InlineKeyboardButton("🗑️ إلغاء الربط", callback_data=f"unlink_channel_prompt:{container_id}"),
-            # زر تغيير القناة يمكن إضافته لاحقًا
-            # InlineKeyboardButton("🔄 تغيير القناة", callback_data=f"relink_channel_start:{container_id}")
-        ]
-        keyboard.append(control_buttons)
+        if linked_entity['is_watching']:
+            keyboard.append([InlineKeyboardButton(f"⏸️ إيقاف مراقبة {entity_type_str}", callback_data=f"stop_watch:{container_id}")])
+        else:
+            keyboard.append([InlineKeyboardButton(f"▶️ بدء مراقبة {entity_type_str}", callback_data=f"start_watch:{container_id}")])
+        
+        # Control buttons for the link
+        keyboard.append([InlineKeyboardButton(f"🗑️ إلغاء ربط {entity_type_str}", callback_data=f"unlink_entity_prompt:{container_id}")])
 
     keyboard.append([InlineKeyboardButton("🔙 رجوع للإعدادات", callback_data=f"settings_container:{container_id}")])
     return InlineKeyboardMarkup(keyboard)

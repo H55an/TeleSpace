@@ -66,13 +66,17 @@ def main() -> None:
     application.add_handler(add_items_conv)
     application.add_handler(link_channel_conv)
     
-    # [مصحح] معالج رسائل القنوات للمراقبة (للرسائل الجديدة والمعدلة)
-    application.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, handlers.channel_post_handler))
-    application.add_handler(MessageHandler(filters.UpdateType.EDITED_CHANNEL_POST, handlers.channel_post_handler))
+    # [جديد وموحد] معالج الأتمتة للرسائل من القنوات والمجموعات
+    application.add_handler(MessageHandler(
+        filters.UpdateType.CHANNEL_POST | filters.UpdateType.EDITED_CHANNEL_POST |
+        (filters.ChatType.GROUPS & ~filters.COMMAND),
+        handlers.entity_post_handler
+    ))
     
     # ثم يتم تسجيل الأوامر والمعالج العام للأزرار
     application.add_handler(CommandHandler("start", handlers.start))
     application.add_handler(CommandHandler("info", handlers.info))
+    application.add_handler(CommandHandler("link_group", handlers.link_group_command)) # [إضافة جديدة]
     application.add_handler(CallbackQueryHandler(handlers.button_press_router))
     
     # 3. تشغيل البوت

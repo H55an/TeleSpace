@@ -11,6 +11,15 @@ import config
 import database as db
 import keyboards as kb
 from constants import *
+from processors import ChannelProcessor, GroupProcessor # [جديد]
+
+# [جديد] خريطة المعالجات
+PROCESSORS = {
+    'channel': ChannelProcessor(),
+    'group': GroupProcessor(),
+    'supergroup': GroupProcessor(),
+}
+
 
 # --- Helper Functions ---
 
@@ -377,37 +386,46 @@ _لا تشمل هذه الإحصائيات المالك \._
             parse_mode='MarkdownV2'
         )
 
-    # --- Channel Watch ---
-    elif data.startswith("channel_watch:"):
+    # --- Automation (New and Modified) ---
+    elif data.startswith("automation_menu:"):
         container_id = int(data.split(':')[1])
-        await show_channel_watch_menu(update, context, container_id)
+        await show_automation_menu(update, context, container_id)
+
+    elif data.startswith("link_group_start:"):
+        container_id = int(data.split(':')[1])
+        await link_group_start(update, context, container_id)
 
     elif data.startswith("start_watch:"):
         container_id = int(data.split(':')[1])
         db.update_watching_status(container_id, True, user_id)
         await query.answer("✅ تم بدء المراقبة.")
-        await show_channel_watch_menu(update, context, container_id)
+        await show_automation_menu(update, context, container_id)
 
     elif data.startswith("stop_watch:"):
         container_id = int(data.split(':')[1])
         db.update_watching_status(container_id, False, user_id)
         await query.answer("⏸️ تم إيقاف المراقبة.")
-        await show_channel_watch_menu(update, context, container_id)
+        await show_automation_menu(update, context, container_id)
 
-    elif data.startswith("unlink_channel_prompt:"):
+    elif data.startswith("unlink_entity_prompt:"):
         container_id = int(data.split(':')[1])
-        text = "⚠️ هل أنت متأكد من إلغاء ربط القناة؟ سيتم إيقاف الأتمتة."
+        linked_entity = db.get_linked_entity_by_container(container_id)
+        entity_type_str = "الكيان"
+        if linked_entity:
+            entity_type_str = "القناة" if linked_entity['entity_type'] == 'channel' else "المجموعة"
+        
+        text = f"⚠️ هل أنت متأكد من إلغاء ربط {entity_type_str}؟ سيتم إيقاف الأتمتة."
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔥 نعم، إلغاء الربط", callback_data=f"unlink_channel_confirm:{container_id}")],
-            [InlineKeyboardButton("❌ تراجع", callback_data=f"channel_watch:{container_id}")]
+            [InlineKeyboardButton("🔥 نعم، إلغاء الربط", callback_data=f"unlink_entity_confirm:{container_id}")],
+            [InlineKeyboardButton("❌ تراجع", callback_data=f"automation_menu:{container_id}")]
         ])
         await query.message.edit_text(text, reply_markup=keyboard)
 
-    elif data.startswith("unlink_channel_confirm:"):
+    elif data.startswith("unlink_entity_confirm:"):
         container_id = int(data.split(':')[1])
-        db.delete_channel_link(container_id, user_id)
-        await query.answer("✅ تم إلغاء ربط القناة بنجاح.")
-        await show_channel_watch_menu(update, context, container_id)
+        db.delete_linked_entity(container_id, user_id)
+        await query.answer("✅ تم إلغاء الربط بنجاح.")
+        await show_automation_menu(update, context, container_id)
 
     # --- Deletion ---
     elif data.startswith("delete_container_prompt:"):
@@ -698,15 +716,13 @@ async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE
         await start(update, context)
     return ConversationHandler.END
 
-# --- Channel Watch Handlers ---
+# --- Automation Handlers ---
 
-async def show_channel_watch_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, container_id: int):
-    """[مصحح] يعرض قائمة التحكم في الأتمتة التلقائية."""
-    # This function can be called from a conversation handler (no query) or a button press (query)
+async def show_automation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, container_id: int):
+    """[معدل] يعرض قائمة التحكم في الأتمتة للكيانات (قنوات ومجموعات)."""
     query = update.callback_query
     user_id = update.effective_user.id
     
-    # Ensure the container exists and the user is the owner
     details = db.get_container_details(container_id)
     if not details or details['owner_user_id'] != user_id:
         if query:
@@ -715,24 +731,23 @@ async def show_channel_watch_menu(update: Update, context: ContextTypes.DEFAULT_
             await context.bot.send_message(user_id, "ليس لديك الصلاحية للوصول إلى هنا.")
         return
 
-    link = db.get_channel_link_by_container(container_id)
-    text = f"🤖 *الأتمتة التلقائية للقسم: {escape_markdown(details['name'], version=2)}*\n\n"
+    linked_entity = db.get_linked_entity_by_container(container_id)
+    text = f"🤖 *الأتمتة للقسم: {escape_markdown(details['name'], version=2)}*\n\n"
 
-    if not link:
+    if not linked_entity:
         text += "لم يتم ربط أي قناة بعد\. يمكنك ربط قناة عامة أو خاصة أنت مشرف بها\.\n\n"
         text += "سيقوم البوت بأرشفة الرسائل الجديدة أو المعدلة من القناة التي تحتوي على هاشتاجات تتطابق مع أسماء المجلدات داخل هذا القسم\."
     else:
-        status = "مفعلة" if link['is_watching'] else "متوقفة"
-        text += f"القناة المرتبطة: *{escape_markdown(link['channel_name'], version=2)}*\n"
+        entity_type_str = "القناة" if linked_entity['entity_type'] == 'channel' else "المجموعة"
+        status = "مفعلة" if linked_entity['is_watching'] else "متوقفة"
+        text += f"{entity_type_str} المرتبطة: *{escape_markdown(linked_entity['entity_name'], version=2)}*\n"
         text += f"حالة المراقبة: *{status}*"
 
-    keyboard = kb.build_channel_watch_keyboard(container_id)
+    keyboard = kb.build_automation_keyboard(container_id)
     
-    # Use query if available, otherwise send a new message
     if query:
         await query.message.edit_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
     else:
-        # This case happens if we return from the conversation handler
         await context.bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard, parse_mode='MarkdownV2')
 
 
@@ -747,9 +762,8 @@ async def link_channel_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer("فقط مالك القسم يمكنه ربط القنوات.", show_alert=True)
         return ConversationHandler.END
 
-    context.user_data['channel_watch_container_id'] = container_id
-    # Set a specific previous_menu for channel flow cancellation
-    context.user_data['previous_menu'] = f"channel_watch:{container_id}"
+    context.user_data['automation_container_id'] = container_id
+    context.user_data['previous_menu'] = f"automation_menu:{container_id}"
 
     text = """
 *🔗 لربط قناة، اتبع الخطوات التالية:*
@@ -764,9 +778,9 @@ async def link_channel_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return AWAITING_CHANNEL_FORWARD
 
 async def receive_channel_forward(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """[مصحح] يعالج الرسالة المعاد توجيهها للتحقق من القناة وربطها."""
+    """[معدل] يعالج الرسالة المعاد توجيهها لربط القناة باستخدام `link_entity`."""
     user_id = update.effective_user.id
-    container_id = context.user_data.get('channel_watch_container_id')
+    container_id = context.user_data.get('automation_container_id')
 
     if not container_id:
         await update.message.reply_text("⚠️ حدث خطأ ما. يرجى المحاولة مرة أخرى بالدخول إلى إعدادات القسم.")
@@ -774,155 +788,184 @@ async def receive_channel_forward(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     origin = update.message.forward_origin
-    if not origin:
+    if not origin or origin.type != 'channel':
         await update.message.reply_text(
-            "⚠️ هذه ليست رسالة معاد توجيهها. يرجى إعادة توجيه رسالة من قناة.\n\nأو أرسل /cancel للإلغاء."
+            "⚠️ هذه ليست رسالة معاد توجيهها من قناة. يرجى إعادة توجيه رسالة من قناة.\n\nأو أرسل /cancel للإلغاء."
         )
         return AWAITING_CHANNEL_FORWARD
 
-    if origin.type != 'channel':
-        await update.message.reply_text(
-            "⚠️ يمكنك فقط ربط القنوات، وليس المجموعات أو المستخدمين. يرجى المحاولة مرة أخرى.\n\nأو أرسل /cancel للإلغاء."
-        )
-        return AWAITING_CHANNEL_FORWARD
-
-    # Now we know origin is MessageOriginChannel
     channel = origin.chat
     channel_id = channel.id
     channel_name = channel.title
 
-    # Check if this channel is already linked to another section
-    existing_link = db.get_channel_link_by_channel_id(channel_id)
+    # Check if this entity is already linked to another section
+    existing_link = db.get_linked_entity_by_entity_id(channel_id)
     if existing_link and existing_link['container_id'] != container_id:
         await update.message.reply_text(f"⚠️ هذه القناة مرتبطة بالفعل بقسم آخر. لا يمكن ربط نفس القناة مرتين.")
         context.user_data.clear()
-        await show_channel_watch_menu(update, context, container_id)
+        await show_automation_menu(update, context, container_id)
         return ConversationHandler.END
 
-    # Check if the bot is in the channel
+    # Check bot and user permissions in the channel
     try:
         bot_member = await context.bot.get_chat_member(channel_id, context.bot.id)
-        # The bot only needs to be a member to receive messages. It doesn't need admin rights to read.
         if bot_member.status not in ['administrator', 'member']:
-            raise Forbidden("Bot is not a member")
-    except Forbidden:
-        await update.message.reply_text("⚠️ لم يتم العثور على البوت في القناة. يرجى إضافته كمشرف أولاً ثم إعادة المحاولة.")
-        return AWAITING_CHANNEL_FORWARD
-    except Exception as e:
-        await update.message.reply_text(f"⚠️ خطأ غير متوقع ، يرجى التحقق من صلاحيات البوت كمشرف في القناة: {e}")
-        return AWAITING_CHANNEL_FORWARD
-
-    # Check if the user linking the channel is an admin or creator
-    try:
+            raise Forbidden("Bot is not a member or admin")
         user_member = await context.bot.get_chat_member(channel_id, user_id)
         if user_member.status not in ['creator', 'administrator']:
             await update.message.reply_text("⚠️ يجب أن تكون مشرفًا أو مالكًا في القناة لتتمكن من ربطها.")
             return AWAITING_CHANNEL_FORWARD
-    except Forbidden:
-        await update.message.reply_text("⚠️ لا يمكنني التحقق من صلاحياتك. هل أنت متأكد أنك عضو في القناة؟")
+    except Forbidden as e:
+        await update.message.reply_text(f"⚠️ لا يمكنني الوصول للقناة أو التحقق من الصلاحيات. يرجى التأكد من أن البوت مشرف في القناة. ({e})")
         return AWAITING_CHANNEL_FORWARD
     except Exception as e:
-        await update.message.reply_text(f"⚠️ خطأ غير متوقع أثناء التحقق من صلاحياتك في القناة: {e}")
+        await update.message.reply_text(f"⚠️ خطأ غير متوقع: {e}")
         return AWAITING_CHANNEL_FORWARD
 
-    # All checks passed, link the channel
-    db.add_channel_link(container_id, user_id, channel_id, channel_name)
-    await update.message.reply_text(f"✅ تم ربط القناة '{escape_markdown(channel_name, version=2)}' بنجاح\!", parse_mode='MarkdownV2')
+    # All checks passed, link the entity
+    success = db.link_entity(
+        container_id=container_id, 
+        user_id=user_id, 
+        entity_id=channel_id, 
+        entity_name=channel_name, 
+        entity_type='channel'
+    )
     
+    if success:
+        await update.message.reply_text(f"✅ تم ربط القناة '{escape_markdown(channel_name, version=2)}' بنجاح\!", parse_mode='MarkdownV2')
+    else:
+        # This message is shown if the unique constraint on entity_id fails
+        await update.message.reply_text(f"⚠️ فشل ربط القناة. قد تكون القناة مرتبطة بالفعل بقسم آخر.")
+
     context.user_data.clear()
-    await show_channel_watch_menu(update, context, container_id)
+    await show_automation_menu(update, context, container_id)
     return ConversationHandler.END
 
-async def channel_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """[مطور] يعالج الرسائل في القنوات المراقبة، ويدير الأرشفة والأزرار التفاعلية."""
+
+async def link_group_start(update: Update, context: ContextTypes.DEFAULT_TYPE, container_id: int):
+    """[جديد ومعدل] يبدأ عملية ربط مجموعة عبر إرسال رمز ربط للمستخدم."""
+    query = update.callback_query
+    user_id = query.from_user.id
+
+    # Security check: ensure user owns the container
+    details = db.get_container_details(container_id)
+    if not details or details['owner_user_id'] != user_id:
+        await query.answer("فقط مالك القسم يمكنه ربط المجموعات.", show_alert=True)
+        return
+
+    token = db.create_linking_token(user_id, container_id)
+    if not token:
+        await query.answer("⚠️ حدث خطأ أثناء إنشاء رمز الربط. يرجى المحاولة مرة أخرى.", show_alert=True)
+        return
+
+    bot_username = (await context.bot.get_me()).username
+    text = f"""*🔗 لربط مجموعة، اتبع الخطوات التالية:*
+
+1\. أضف البوت إلى مجموعتك وارفعه إلى رتبة *مشرف*\.
+2\. انسخ الأمر التالي *بالكامل* وأرسله في المجموعة:
+
+`/link_group@{bot_username} {token}`
+
+*هذا الأمر صالح لمدة 10 دقائق فقط\.*"""
+    await query.message.edit_text(text, parse_mode='MarkdownV2', reply_markup=kb.back_button(f"automation_menu:{container_id}"))
+
+
+async def link_group_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """[جديد] يعالج أمر ربط المجموعة الذي يحتوي على الرمز."""
+    user_id = update.effective_user.id
+    chat = update.effective_chat
+
+    if not context.args or len(context.args) != 1:
+        await update.message.reply_text("⚠️ صيغة الأمر غير صحيحة. يرجى استخدام الصيغة المرسلة لك في الخاص.")
+        return
+
+    if not chat.type in ['group', 'supergroup']:
+        await update.message.reply_text("⚠️ هذا الأمر يمكن استخدامه داخل المجموعات فقط.")
+        return
+
+    token = context.args[0]
+    token_data = db.get_linking_token_data(token)
+
+    if not token_data:
+        await context.bot.send_message(user_id, "⚠️ رمز الربط غير صالح أو انتهت صلاحيته. يرجى طلب رمز جديد.")
+        return
+
+    if token_data['user_id'] != user_id:
+        await context.bot.send_message(user_id, "⚠️ هذا الرمز لا يخصك. لا يمكنك استخدامه.")
+        return
+
+    # Check bot and user permissions
+    try:
+        bot_member = await chat.get_member(context.bot.id)
+        if bot_member.status != 'administrator':
+            await context.bot.send_message(user_id, f"⚠️ يجب أن يكون البوت مشرفًا في المجموعة '{chat.title}' لإتمام الربط.")
+            return
+
+        user_member = await chat.get_member(user_id)
+        if user_member.status not in ['creator', 'administrator']:
+            await context.bot.send_message(user_id, f"⚠️ يجب أن تكون مشرفًا في المجموعة '{chat.title}' لتتمكن من ربطها.")
+            return
+    except Forbidden:
+        await context.bot.send_message(user_id, f"⚠️ لا يمكنني التحقق من الصلاحيات في المجموعة '{chat.title}'. يرجى التأكد من أنني عضو ومشرف.")
+        return
+    except Exception as e:
+        await context.bot.send_message(user_id, f"⚠️ خطأ غير متوقع أثناء التحقق من الصلاحيات: {e}")
+        return
+
+    # All checks passed
+    container_id = token_data['container_id']
+    
+    # Check if this group is already linked to another section
+    existing_link = db.get_linked_entity_by_entity_id(chat.id)
+    if existing_link and existing_link['container_id'] != container_id:
+        await context.bot.send_message(user_id, f"⚠️ هذه المجموعة مرتبطة بالفعل بقسم آخر. لا يمكن ربط نفس المجموعة مرتين.")
+        return
+
+    success = db.link_entity(
+        container_id=container_id,
+        user_id=user_id,
+        entity_id=chat.id,
+        entity_name=chat.title,
+        entity_type=chat.type,
+        is_group_with_topics=chat.is_forum
+    )
+
+    if success:
+        db.delete_linking_token(token)
+        await update.message.reply_text(f"✅ تم ربط هذه المجموعة بنجاح بالقسم المستهدف!")
+        await context.bot.send_message(user_id, f"✅ تم تأكيد ربط المجموعة '{chat.title}'.")
+    else:
+        await context.bot.send_message(user_id, f"⚠️ فشل ربط المجموعة '{chat.title}'. قد تكون مرتبطة بالفعل بقسم آخر.")
+
+async def entity_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    [جديد وموحد] يعالج الرسائل من أي كيان مرتبط (قناة أو مجموعة).
+    يحدد نوع الكيان ويستدعي المعالج المنطقي (Processor) المناسب له.
+    """
     message = update.effective_message
     if not message:
         return
 
-    channel_id = message.chat.id
-    message_id = message.message_id
-
-    # جلب كل الروابط المفعلة للمراقبة (مع استخدام الكاش)
-    cache_key = 'watching_links_cache'
-    current_time = asyncio.get_running_loop().time()
-    if cache_key not in context.bot_data or (current_time - context.bot_data.get(cache_key, {}).get('time', 0)) > 60:
-        watching_links = db.get_all_watching_channel_links()
-        context.bot_data[cache_key] = {'links': watching_links, 'time': current_time}
-    
-    watching_links = context.bot_data[cache_key]['links']
-
-    # البحث عن القسم المرتبط بهذه القناة
-    relevant_link = next((link for link in watching_links if link['channel_id'] == channel_id), None)
-    if not relevant_link:
+    chat = update.effective_chat
+    if not chat:
         return
 
-    section_id = relevant_link['container_id']
-    user_id = relevant_link['user_id'] # مالك القسم
+    # جلب الكيان المرتبط من قاعدة البيانات
+    # نستخدم ID الدردشة لتحديد ما إذا كانت هذه الدردشة (قناة أو مجموعة) مراقبة
+    linked_entity = db.get_linked_entity_by_entity_id(chat.id)
 
-    # استخراج الهاشتاجات الحالية من الرسالة
-    text = message.text or message.caption or ""
-    current_hashtags = set(re.findall(r"#(\w+)", text))
-    normalized_current_hashtags = {tag.replace('_', ' ').lower() for tag in current_hashtags}
+    # إذا لم يكن الكيان مرتبطًا أو كانت المراقبة متوقفة، نتجاهل الرسالة
+    if not linked_entity or not linked_entity['is_watching']:
+        return
 
-    # جلب كل المجلدات المتاحة في القسم وهيكلتها للبحث السريع
-    all_folders_in_section = db.get_all_folders_recursively(section_id)
-    folder_name_map = {folder['name'].lower(): folder['id'] for folder in all_folders_in_section}
-    folder_id_map = {folder['id']: folder['name'] for folder in all_folders_in_section}
+    # تحديد نوع المعالج المنطقي (Processor) المطلوب
+    # ملاحظة: 'supergroup' يتم التعامل معها بنفس منطق 'group'
+    processor_key = chat.type if chat.type in ['channel', 'group', 'supergroup'] else None
+    processor = PROCESSORS.get(processor_key)
 
-    # تحديد المجلدات التي تمت أرشفة الرسالة فيها سابقًا
-    previously_archived = db.get_archived_folders_for_message(channel_id, message_id)
-    previously_archived_ids = set(previously_archived.keys())
+    if not processor:
+        # This will effectively ignore messages from private chats or other types.
+        return
 
-    # تحديد المجلدات المطابقة للهاشتاجات الحالية
-    current_matched_folder_ids = {folder_name_map[ht] for ht in normalized_current_hashtags if ht in folder_name_map}
-
-    # حساب التغييرات: ما يجب إضافته وما يجب حذفه
-    folders_to_add = current_matched_folder_ids - previously_archived_ids
-    folders_to_remove = previously_archived_ids - current_matched_folder_ids
-
-    # 1. تنفيذ الحذف
-    for folder_id in folders_to_remove:
-        item_id_to_delete = previously_archived.get(folder_id)
-        if item_id_to_delete:
-            db.delete_item(item_id_to_delete, user_id)
-            db.remove_archived_message(channel_id, message_id, folder_id)
-            print(f"Removed item {item_id_to_delete} from folder {folder_id} for message {message_id}")
-
-    # 2. تنفيذ الإضافة
-    if folders_to_add:
-        # We only need to process the message for saving once
-        item_data = await process_message_for_saving(message)
-        if item_data:
-            for folder_id in folders_to_add:
-                # Double-check it wasn't added in a race condition
-                if folder_id not in previously_archived_ids:
-                    item_id = db.add_item(container_id=folder_id, user_id=user_id, **item_data)
-                    if item_id:
-                        db.add_archived_message(channel_id, message_id, folder_id, item_id)
-                        print(f"Archived message {message_id} to folder {folder_id} with item_id {item_id}")
-
-    # 3. تحديث الأزرار التفاعلية في القناة
-    final_archived_folder_ids = current_matched_folder_ids
-    
-    # إنشاء قائمة بالمجلدات النهائية لعرضها في الأزرار
-    final_folders_for_keyboard = [
-        {'id': fid, 'name': folder_id_map[fid]} 
-        for fid in final_archived_folder_ids 
-        if fid in folder_id_map
-    ]
-
-    try:
-        bot_username = (await context.bot.get_me()).username
-        keyboard = kb.build_channel_post_keyboard(final_folders_for_keyboard, section_id, bot_username)
-        
-        await context.bot.edit_message_reply_markup(
-            chat_id=channel_id,
-            message_id=message_id,
-            reply_markup=keyboard
-        )
-    except Forbidden as e:
-        print(f"Failed to edit reply markup for message {message_id} in channel {channel_id}. Reason: {e}")
-    except Exception as e:
-        # Other errors like "message to edit not found" can happen if the message is deleted quickly
-        print(f"An unexpected error occurred while editing reply markup: {e}")
-
+    # استدعاء المعالج المنطقي مع تمرير دالة الحفظ لحل مشكلة الاعتماد الدائري
+    await processor.process_message(message, linked_entity, context, process_message_for_saving)
