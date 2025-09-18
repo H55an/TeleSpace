@@ -209,9 +209,7 @@ def get_child_containers(parent_id: int):
             conn.close()
 
 def get_all_folders_recursively(parent_id: int) -> list:
-    """
-    [جديد] يجلب كل المجلدات (وليس الأقسام) الموجودة تحت حاوية أصل معينة بشكل متعمق.
-    """
+    """[جديد] يجلب كل المجلدات (وليس الأقسام) الموجودة تحت حاوية أصل معينة بشكل متعمق."""
     conn = None
     try:
         conn = get_db_connection()
@@ -243,6 +241,41 @@ def get_all_folders_recursively(parent_id: int) -> list:
             return cursor.fetchall()
     except psycopg2.Error as e:
         print(f"DB Error in get_all_folders_recursively: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def get_all_containers_recursively(parent_id: int) -> list:
+    """[جديد] يجلب كل الحاويات (أقسام ومجلدات) الموجودة تحت حاوية أصل معينة بشكل متعمق."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return []
+
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            # استخدام استعلام متكرر (CTE) لاجتياز التسلسل الهرمي
+            query = """
+                WITH RECURSIVE container_hierarchy AS (
+                    -- الجزء الأساسي: الحاويات المباشرة تحت الأصل
+                    SELECT id, name, type, parent_id
+                    FROM containers
+                    WHERE parent_id = %s
+
+                    UNION ALL
+
+                    -- الجزء المتكرر: أبناء الحاويات التي تم العثور عليها في الخطوة السابقة
+                    SELECT c.id, c.name, c.type, c.parent_id
+                    FROM containers c
+                    JOIN container_hierarchy ch ON c.parent_id = ch.id
+                )
+                -- اختيار كل شيء من التسلسل الهرمي
+                SELECT id, name, type FROM container_hierarchy;
+            """
+            cursor.execute(query, (parent_id,))
+            return cursor.fetchall()
+    except psycopg2.Error as e:
+        print(f"DB Error in get_all_containers_recursively: {e}")
         return []
     finally:
         if conn:
@@ -964,6 +997,57 @@ def delete_linked_entity(container_id: int, user_id: int) -> bool:
     finally:
         if conn:
             conn.close()
+
+
+# --- Topic Functions ---
+
+def add_or_update_topic(chat_id: int, thread_id: int, topic_name: str):
+    """
+    [جديد] يضيف موضوعًا جديدًا للمجموعة أو يحدث اسمه إذا كان موجودًا بالفعل.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return
+
+        with conn.cursor() as cursor:
+            query = """
+                INSERT INTO forum_topics (chat_id, thread_id, topic_name)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (chat_id, thread_id) DO UPDATE SET
+                    topic_name = EXCLUDED.topic_name;
+            """
+            cursor.execute(query, (chat_id, thread_id, topic_name))
+            conn.commit()
+    except psycopg2.Error as e:
+        print(f"DB Error in add_or_update_topic: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def get_topic_name_by_thread_id(chat_id: int, thread_id: int) -> str | None:
+    """
+    [جديد] يجلب اسم الموضوع باستخدام معرّف المجموعة ومعرّف الموضوع (thread).
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return None
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT topic_name FROM forum_topics WHERE chat_id = %s AND thread_id = %s",
+                (chat_id, thread_id)
+            )
+            result = cursor.fetchone()
+            return result[0] if result else None
+    except psycopg2.Error as e:
+        print(f"DB Error in get_topic_name_by_thread_id: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
 
 # --- Archived Content Functions ---
 

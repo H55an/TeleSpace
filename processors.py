@@ -105,24 +105,52 @@ class ChannelProcessor(EntityProcessor):
             print(f"An unexpected error occurred while editing reply markup: {e}")
 
 class GroupProcessor(EntityProcessor):
-    """Processes messages and UI for linked groups."""
-    async def get_target_folders(self, message, linked_entity, all_folders_in_section) -> set:
-        # NOTE: This is a simplified implementation. It does not yet handle
-        # topic-based groups as described in the specification, as that requires
-        # a more complex setup to map thread_ids to topic names.
-        # For now, it searches for hashtag folders within the entire linked section.
+    """[مطور] يعالج الرسائل في المجموعات بمنطق مخصص للمجموعات ذات المواضيع."""
+    async def get_target_folders(self, message: Message, linked_entity: dict, all_folders_in_section: list) -> set:
+        """
+        [مبسط وموحد] يحدد المجلدات المستهدفة باستخدام جدول forum_topics الموحد.
+        """
         text = message.text or message.caption or ""
         hashtags = set(re.findall(r"#(\w+)", text))
         if not hashtags:
             return set()
-            
+
         normalized_hashtags = {tag.replace('_', ' ').lower() for tag in hashtags}
 
-        folder_name_map = {folder['name'].lower(): folder['id'] for folder in all_folders_in_section}
-        
-        matched_folder_ids = {folder_name_map[ht] for ht in normalized_hashtags if ht in folder_name_map}
-        return matched_folder_ids
+        # إذا لم تكن المجموعة ذات مواضيع، ابحث في القسم الرئيسي مباشرة
+        if not linked_entity.get('is_group_with_topics'):
+            folder_name_map = {folder['name'].lower(): folder['id'] for folder in all_folders_in_section}
+            return {folder_name_map[ht] for ht in normalized_hashtags if ht in folder_name_map}
 
-    async def update_ui(self, context: ContextTypes.DEFAULT_TYPE, message, linked_entity, final_folder_ids, all_folders_in_section):
-        # Do nothing for groups to ensure silent archiving
+        # --- منطق موحد للمجموعات ذات المواضيع ---
+        
+        # توحيد المعرف: استخدم 0 إذا كان None، وإلا استخدم المعرف الحقيقي
+        thread_id = message.message_thread_id if message.message_thread_id is not None else 0
+        
+        # جلب اسم الموضوع من الجدول الموحد
+        topic_name = db.get_topic_name_by_thread_id(message.chat.id, thread_id)
+
+        if not topic_name:
+            return set()
+
+        # ابحث عن "قسم فرعي" يطابق اسم الموضوع
+        all_sub_containers = db.get_all_containers_recursively(linked_entity['container_id'])
+        target_section = next(
+            (c for c in all_sub_containers if c['type'] == 'section' and c['name'].lower() == topic_name.lower()),
+            None
+        )
+
+        if not target_section:
+            return set()
+
+        # ابحث عن المجلدات داخل القسم الفرعي المطابق فقط
+        folders_in_topic_section = db.get_all_folders_recursively(target_section['id'])
+        if not folders_in_topic_section:
+            return set()
+            
+        folder_name_map = {folder['name'].lower(): folder['id'] for folder in folders_in_topic_section}
+        return {folder_name_map[ht] for ht in normalized_hashtags if ht in folder_name_map}
+
+    async def update_ui(self, context: ContextTypes.DEFAULT_TYPE, message: Message, linked_entity: dict, final_folder_ids: set, all_folders_in_section: list):
+        # لا تفعل شيئًا للمجموعات لضمان الأرشفة الصامتة
         pass

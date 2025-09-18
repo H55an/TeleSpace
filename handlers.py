@@ -969,3 +969,35 @@ async def entity_post_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # استدعاء المعالج المنطقي مع تمرير دالة الحفظ لحل مشكلة الاعتماد الدائري
     await processor.process_message(message, linked_entity, context, process_message_for_saving)
+
+
+async def forum_topic_activity_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    [مبسط وموحد] يلتقط جميع أحداث المواضيع ويحفظها في جدول forum_topics.
+    يستخدم '0' كمعرف للموضوع العام.
+    """
+    chat = update.effective_chat
+    if not chat or not chat.is_forum:
+        return
+
+    # تجاهل الحدث إذا كانت المجموعة غير مرتبطة
+    if not db.get_linked_entity_by_entity_id(chat.id):
+        return
+
+    topic_created = update.message.forum_topic_created
+    topic_edited = update.message.forum_topic_edited
+    
+    topic_name = None
+    if topic_created:
+        topic_name = topic_created.name
+    elif topic_edited:
+        topic_name = topic_edited.name
+
+    if not topic_name:
+        return
+
+    # توحيد المعرف: استخدم 0 إذا كان None، وإلا استخدم المعرف الحقيقي
+    thread_id = update.message.message_thread_id if update.message.message_thread_id is not None else 0
+    
+    db.add_or_update_topic(chat.id, thread_id, topic_name)
+    print(f"Unified topic name updated in DB for chat {chat.id}: Thread {thread_id} -> '{topic_name}'")

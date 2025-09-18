@@ -5,17 +5,12 @@ import config
 
 def setup_database():
     """
-    Connects to the PostgreSQL database and creates/updates the tables.
+    Connects to the PostgreSQL database and creates/updates the tables to the latest schema.
     """
     conn = None
     try:
-        # 1. Connect to the PostgreSQL database
-        conn = psycopg2.connect(
-            config.DATABASE_URL
-        )
+        conn = psycopg2.connect(config.DATABASE_URL)
         print("Successfully connected to the database.")
-
-        # 2. Create a cursor
         cursor = conn.cursor()
 
         # --- Users Table ---
@@ -100,14 +95,16 @@ def setup_database():
         )
         """)
 
-        # --- Channel Links Table (for Channel Watch feature) ---
+        # --- Linked Entities Table (for Channel/Group Watch feature) ---
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS channel_links (
+        CREATE TABLE IF NOT EXISTS linked_entities (
             id SERIAL PRIMARY KEY,
             container_id INTEGER NOT NULL UNIQUE,
             user_id BIGINT NOT NULL,
-            channel_id BIGINT NOT NULL UNIQUE,
-            channel_name TEXT,
+            entity_id BIGINT NOT NULL UNIQUE,
+            entity_name TEXT,
+            entity_type TEXT, -- 'channel', 'group', 'supergroup'
+            is_group_with_topics BOOLEAN,
             is_watching BOOLEAN NOT NULL DEFAULT FALSE,
             link_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             FOREIGN KEY (container_id) REFERENCES containers (id) ON DELETE CASCADE,
@@ -115,67 +112,65 @@ def setup_database():
         )
         """)
 
-        # --- Archived Messages Table (for preventing duplicates in Channel Watch) ---
+        # --- Archived Content Table (for preventing duplicates in Watch feature) ---
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS archived_messages (
+        CREATE TABLE IF NOT EXISTS archived_content (
             id SERIAL PRIMARY KEY,
-            channel_id BIGINT NOT NULL,
+            entity_id BIGINT NOT NULL,
             message_id BIGINT NOT NULL,
             container_id INTEGER NOT NULL,
             item_id INTEGER NOT NULL,
             archive_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             FOREIGN KEY (container_id) REFERENCES containers (id) ON DELETE CASCADE,
             FOREIGN KEY (item_id) REFERENCES items (item_record_id) ON DELETE CASCADE,
-            UNIQUE (channel_id, message_id, container_id)
+            UNIQUE (entity_id, message_id, container_id)
         )
         """)
 
-        # --- Add/Update Columns (using a helper function to avoid errors on re-runs) ---
-        def add_column_if_not_exists(table_name, column_name, column_definition):
-            cursor.execute(f"""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='{table_name}' AND column_name='{column_name}'
-            """)
-            if not cursor.fetchone():
-                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
-                print(f"Added column '{column_name}' to table '{table_name}'.")
+        # --- Linking Tokens Table (for Group Linking) ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS linking_tokens (
+            token TEXT PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            container_id INTEGER NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE,
+            FOREIGN KEY (container_id) REFERENCES containers (id) ON DELETE CASCADE
+        )
+        """)
 
-        # Add new columns to existing tables
-        add_column_if_not_exists('users', 'join_date', 'TIMESTAMP WITH TIME ZONE DEFAULT NOW()')
-        add_column_if_not_exists('users', 'last_active_date', 'TIMESTAMP WITH TIME ZONE DEFAULT NOW()')
-        add_column_if_not_exists('containers', 'creation_date', 'TIMESTAMP WITH TIME ZONE DEFAULT NOW()')
-        add_column_if_not_exists('items', 'upload_date', 'TIMESTAMP WITH TIME ZONE DEFAULT NOW()')
-        add_column_if_not_exists('shares', 'creation_date', 'TIMESTAMP WITH TIME ZONE DEFAULT NOW()')
-        add_column_if_not_exists('permissions', 'grant_date', 'TIMESTAMP WITH TIME ZONE DEFAULT NOW()')
-
+        # --- Forum Topics Table (for Topic Name Memory) ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS forum_topics (
+            chat_id BIGINT NOT NULL,
+            thread_id BIGINT NOT NULL,
+            topic_name TEXT NOT NULL,
+            PRIMARY KEY (chat_id, thread_id)
+        )
+        """)
 
         # --- Add Indexes for performance ---
+        print("Applying indexes...")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_items_container_id ON items (container_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_containers_parent_id ON containers (parent_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_containers_owner_id ON containers (owner_user_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_permissions_user_id ON permissions (user_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_log_user_id ON activity_log (user_id);")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_log_activity_type ON activity_log (activity_type);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_linked_entities_entity_id ON linked_entities (entity_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_archived_content_entity_id_message_id ON archived_content (entity_id, message_id);")
 
-        # --- Indexes for Channel Watch ---
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_channel_links_channel_id ON channel_links (channel_id);")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_archived_messages_channel_id_message_id ON archived_messages (channel_id, message_id);")
-
-
-        # 4. Commit changes
         conn.commit()
         print("Database and tables have been successfully set up/updated!")
 
-    except psycopg2.Error as e:
-        print(f"Database error: {e}")
+    except Exception as e:
+        import traceback
+        print(f"An error occurred in database_setup.py: {e}")
+        traceback.print_exc()
     finally:
-        # 5. Close the connection
         if conn:
             cursor.close()
             conn.close()
             print("Database connection closed.")
 
-# Script entry point
 if __name__ == "__main__":
     setup_database()

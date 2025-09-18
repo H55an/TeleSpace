@@ -68,9 +68,15 @@ def main() -> None:
     
     # [جديد وموحد] معالج الأتمتة للرسائل من القنوات والمجموعات
     application.add_handler(MessageHandler(
-        filters.UpdateType.CHANNEL_POST | filters.UpdateType.EDITED_CHANNEL_POST |
-        (filters.ChatType.GROUPS & ~filters.COMMAND),
+        (filters.UpdateType.CHANNEL_POST | filters.UpdateType.EDITED_CHANNEL_POST |
+        (filters.ChatType.GROUPS & ~filters.COMMAND)) & (~filters.StatusUpdate.ALL),
         handlers.entity_post_handler
+    ))
+    
+    # [جديد] معالج لمراقبة إنشاء وتعديل المواضيع
+    application.add_handler(MessageHandler(
+        filters.StatusUpdate.FORUM_TOPIC_CREATED | filters.StatusUpdate.FORUM_TOPIC_EDITED,
+        handlers.forum_topic_activity_handler
     ))
     
     # ثم يتم تسجيل الأوامر والمعالج العام للأزرار
