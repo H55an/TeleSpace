@@ -151,7 +151,7 @@ def build_settings_keyboard(container_id: int, user_id: int) -> InlineKeyboardMa
 
     # [معدل] Use the new automation menu
     if details['type'] == 'section' and permission == 'owner':
-        keyboard.insert(0, [InlineKeyboardButton("🤖 الأتمتة", callback_data=f"automation_menu:{container_id}")])
+        keyboard.insert(0, [InlineKeyboardButton("🤖 الأتمتة الذكية", callback_data=f"automation_menu:{container_id}")])
 
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")])
     return InlineKeyboardMarkup(keyboard)
