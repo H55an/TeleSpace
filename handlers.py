@@ -296,6 +296,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     # عرض القائمة الرئيسية
     first_name = escape_markdown(user.first_name, version=2)
+    developer_link = f"[{escape_markdown(config.DEVELOPER_NAME, version=2)}](tg://user?id={config.DEVELOPER_ID})"
     keyboard = kb.main_menu_keyboard()
     reply_text = f"""
 مرحبًا {first_name}، يسعدنا تواجدك في *TeleSpace* \! 
@@ -309,6 +310,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 *استكشف مساحتك أو ابدأ بتصفح ما شاركه الآخرون معك*\.
 
 _ارسل /info لقرائة دليل استخدام TeleSpace_\.
+
+*تطوير : {developer_link}*
 """
     
     if update.callback_query:

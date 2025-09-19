@@ -8,6 +8,8 @@ load_dotenv()
 # --- المتغيرات الأساسية ---
 # جلب توكن البوت من متغيرات البيئة
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+DEVELOPER_NAME = "Hassan AL-Naqeeb"
+DEVELOPER_ID = 5372240626
 
 # جلب رابط قاعدة البيانات من متغيرات البيئة
 DATABASE_URL = os.getenv("DATABASE_URL")
