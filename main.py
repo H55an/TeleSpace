@@ -83,6 +83,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", handlers.start))
     application.add_handler(CommandHandler("info", handlers.info))
     application.add_handler(CommandHandler("link_group", handlers.link_group_command)) # [إضافة جديدة]
+    application.add_handler(CallbackQueryHandler(handlers.check_subscription_callback, pattern="^check_subscription$"))
     application.add_handler(CallbackQueryHandler(handlers.button_press_router))
     
     # 3. تشغيل البوت

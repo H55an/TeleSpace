@@ -2,7 +2,9 @@
 
 import asyncio
 import re
+from functools import wraps
 from telegram import Update, InlineKeyboardMarkup, Message, InlineKeyboardButton
+from telegram import ChatMember
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.helpers import escape_markdown
 from telegram.error import Forbidden
@@ -19,6 +21,57 @@ PROCESSORS = {
     'group': GroupProcessor(),
     'supergroup': GroupProcessor(),
 }
+
+
+# --- بوابة التحقق (الدالة الحارسة) ---
+
+def check_subscription(func):
+    """
+    [جديد] Decorator للتحقق من أن المستخدم عضو في القناة المطلوبة.
+    """
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        # تخطي التحقق إذا لم يتم تعيين القناة أو الرابط
+        if config.REQUIRED_CHANNEL_ID == "PLEASE_UPDATE_ME" or config.REQUIRED_CHANNEL_LINK == "PLEASE_UPDATE_ME":
+            return await func(update, context, *args, **kwargs)
+
+        user = update.effective_user
+        if not user:
+            return
+
+        try:
+            member = await context.bot.get_chat_member(chat_id=config.REQUIRED_CHANNEL_ID, user_id=user.id)
+            # التحقق من أن حالة العضوية صالحة
+            if member.status in ['member', 'administrator', 'creator']:
+                return await func(update, context, *args, **kwargs)
+            else:
+                # إذا كانت الحالة left, kicked, etc.
+                raise Forbidden("User is not a member.")
+        except Forbidden:
+            # هذا الخطأ يحدث إذا لم يكن المستخدم عضواً
+            text = """
+🛂 أهلاً بك في TeleSpace!
+لاستخدام خدمات البوت، يرجى أولاً الانضمام إلى قناتنا الرسمية. هذا يضمن حصولك على آخر التحديثات والأخبار.
+
+اضغط على الزر أدناه للانضمام، ثم عد إلى هنا واضغط '✅ لقد اشتركت'.
+            """
+            keyboard = kb.build_subscription_keyboard()
+            
+            # إذا كان التفاعل عبر زر، نعدل الرسالة، وإلا نرسل رسالة جديدة
+            query = update.callback_query
+            if query:
+                # نجيب على الـ query أولاً لمنع ظهور علامة التحميل
+                await query.answer()
+                await query.message.edit_text(text, reply_markup=keyboard)
+            else:
+                await update.message.reply_text(text, reply_markup=keyboard)
+            return # نوقف تنفيذ الدالة الأصلية
+        except Exception as e:
+            print(f"An unexpected error occurred in subscription check: {e}")
+            await update.message.reply_text("حدث خطأ أثناء التحقق من اشتراكك. يرجى المحاولة مرة أخرى.")
+            return
+
+    return wrapper
 
 
 # --- Helper Functions ---
@@ -188,6 +241,7 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
 
 
 # --- Main Interface and Browsing ---
+@check_subscription
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """[معدل] يبدأ البوت ويعالج روابط المشاركة والروابط العميقة للقنوات."""
     user = update.effective_user
@@ -302,6 +356,7 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(info_text, parse_mode='MarkdownV2', reply_markup=kb.back_button("back_to_main"))
     return ConversationHandler.END
 
+@check_subscription
 async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """[معدل] الموجه الرئيسي لضغطات الأزرار."""
     query = update.callback_query
@@ -315,12 +370,12 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif data == "back_to_main": await start(update, context)
     elif data.startswith("container:"): await show_container(update, context, int(data.split(':')[1]))
     
-    # --- Content Viewing ---
+    # --- Content Viewing ---\
     elif data.startswith("view_items:"):
         _, container_id, offset = data.split(':')
         await view_and_send_container_contents(update, context, int(container_id), int(offset))
 
-    # --- Settings ---
+    # --- Settings ---\
     elif data.startswith("settings_container:"):
         container_id = int(data.split(':')[1])
         if not db.container_exists(container_id):
@@ -331,7 +386,7 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
         keyboard = kb.build_settings_keyboard(container_id, user_id)
         await query.message.edit_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
 
-    # --- Sharing ---
+    # --- Sharing ---\
     elif data.startswith("share_menu_container:"):
         container_id = int(data.split(':')[1])
         if not db.container_exists(container_id):
@@ -386,7 +441,7 @@ _لا تشمل هذه الإحصائيات المالك \._
             parse_mode='MarkdownV2'
         )
 
-    # --- Automation (New and Modified) ---
+    # --- Automation (New and Modified) ---\
     elif data.startswith("automation_menu:"):
         container_id = int(data.split(':')[1])
         await show_automation_menu(update, context, container_id)
@@ -427,7 +482,7 @@ _لا تشمل هذه الإحصائيات المالك \._
         await query.answer("✅ تم إلغاء الربط بنجاح.")
         await show_automation_menu(update, context, container_id)
 
-    # --- Deletion ---
+    # --- Deletion ---\
     elif data.startswith("delete_container_prompt:"):
         container_id = int(data.split(':')[1])
         details = db.get_container_details(container_id)
@@ -517,7 +572,7 @@ _لا تشمل هذه الإحصائيات المالك \._
         await query.answer("✅ تم حذف العنصر بنجاح.", show_alert=False)
         await query.message.delete()
 
-    # --- Leaving Shared Items ---
+    # --- Leaving Shared Items ---\
     elif data.startswith("leave_item_prompt_container:"):
         container_id = int(data.split(':')[1])
         if not db.container_exists(container_id):
@@ -1001,3 +1056,14 @@ async def forum_topic_activity_handler(update: Update, context: ContextTypes.DEF
     
     db.add_or_update_topic(chat.id, thread_id, topic_name)
     print(f"Unified topic name updated in DB for chat {chat.id}: Thread {thread_id} -> '{topic_name}'")
+
+@check_subscription
+async def check_subscription_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    [جديد] يتم استدعاؤه عند الضغط على زر "لقد اشتركت".
+    الـ decorator سيقوم بالتحقق، وإذا نجح، سنقوم ببساطة باستدعاء دالة البدء.
+    """
+    query = update.callback_query
+    await query.answer("✅ شكرًا لاشتراكك! أهلاً بك.", show_alert=False)
+    # بعد التحقق الناجح، نعرض القائمة الرئيسية
+    await start(update, context)

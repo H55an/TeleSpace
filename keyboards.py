@@ -2,6 +2,7 @@
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import database as db
+import config
 
 def build_my_space_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """
@@ -212,6 +213,17 @@ def back_button(callback_data: str) -> InlineKeyboardMarkup:
     [جديد] ينشئ زر رجوع بسيط.
     """
     return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data=callback_data)]])
+
+def build_subscription_keyboard() -> InlineKeyboardMarkup:
+    """
+    [جديد] يبني لوحة المفاتيح التي تطلب من المستخدم الاشتراك في القناة.
+    """
+    keyboard = [
+        [InlineKeyboardButton("🔗 الانضمام إلى القناة", url=config.REQUIRED_CHANNEL_LINK)],
+        [InlineKeyboardButton("✅ لقد اشتركت", callback_data="check_subscription")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 
 
 def build_channel_post_keyboard(folders: list, section_id: int, bot_username: str) -> InlineKeyboardMarkup | None:
