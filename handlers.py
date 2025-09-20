@@ -224,6 +224,8 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
                     'audio': context.bot.send_audio,
                     'voice': context.bot.send_voice,
                 }
+
+                content = content if len(content) <= 1024 else content[:1020] + " ..."
                 kwargs = {'caption': content, 'reply_markup': reply_markup, item_type: file_id}
                 await send_map[item_type](chat_id=chat_id, **kwargs)
             
@@ -310,8 +312,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 *استكشف مساحتك أو ابدأ بتصفح ما شاركه الآخرون معك*\.
 
 _ارسل /info لقرائة دليل استخدام TeleSpace_\.
-
-*تطوير : {developer_link}*
 """
     
     if update.callback_query:
