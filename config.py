@@ -14,6 +14,10 @@ DEVELOPER_ID = 5372240626
 # جلب رابط قاعدة البيانات من متغيرات البيئة
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# [جديد] مفتاح API لـ OpenRouter
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+
 # --- إعدادات القنوات ---
 # معرف القناة التي يتم فيها تخزين الملفات (للحفظ الآمن)
 STORAGE_CHANNEL_ID = -1003046683134
@@ -35,4 +39,3 @@ if not TELEGRAM_BOT_TOKEN or not DATABASE_URL:
 
 if REQUIRED_CHANNEL_ID == "PLEASE_UPDATE_ME" or REQUIRED_CHANNEL_LINK == "PLEASE_UPDATE_ME":
     print("Warning: REQUIRED_CHANNEL_ID and REQUIRED_CHANNEL_LINK are not set in config.py or .env file. The subscription feature will not work correctly.")
-

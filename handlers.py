@@ -14,6 +14,7 @@ import database as db
 import keyboards as kb
 from constants import *
 from processors import ChannelProcessor, GroupProcessor # [جديد]
+import ai
 
 # [جديد] خريطة المعالجات
 PROCESSORS = {
@@ -794,6 +795,57 @@ async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await start(update, context)
     return ConversationHandler.END
+
+# --- (جديد) محادثة المرشد الذكي ---
+
+async def ask_ai_guide_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """يبدأ محادثة المرشد الذكي."""
+    query = update.callback_query
+    await query.answer()
+    db.update_user_last_active(update.effective_user.id)
+
+    context.user_data['previous_menu'] = 'back_to_main'
+    
+    text = """
+🤖 *مرشد TeleSpace الذكي*
+
+أهلاً بك! أنا هنا لمساعدتك في فهم كيفية استخدام البوت.
+
+**اطرح سؤالك بوضوح** (مثال: "كيف أشارك مجلد؟" أو "ما الفرق بين القسم والمجلد؟").
+
+سأجيبك بالاعتماد على دليل الاستخدام الرسمي للبوت.
+
+*للخروج من وضع الإرشاد، أرسل /cancel*.
+    """
+    if query and query.message:
+        await query.message.edit_text(
+            text, 
+            # parse_mode='MarkdownV2', 
+            reply_markup=kb.back_button('back_to_main')
+        )
+    
+    return AWAITING_GUIDE_QUESTION
+
+async def receive_ai_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """يستقبل سؤال المستخدم، يحصل على إجابة من الذكاء الاصطناعي، ويرد."""
+    question = update.message.text
+    user_id = update.effective_user.id
+    db.update_user_last_active(user_id)
+
+    # إعطاء إشعار فوري بأن البوت "يفكر"
+    thinking_message = await update.message.reply_text("🤖 جاري التفكير...", do_quote=True)
+
+    # الحصول على الرد من الذكاء الاصطناعي
+    answer = ai.get_guide_response(question)
+
+    # تعديل رسالة "جاري التفكير" بالرد النهائي
+    await thinking_message.edit_text(answer)
+
+    # السؤال عن سؤال آخر لإبقاء المحادثة مستمرة
+    await update.message.reply_text("هل لديك سؤال آخر؟ أو أرسل /cancel للخروج.")
+    
+    return AWAITING_GUIDE_QUESTION
+
 
 # --- Automation Handlers ---
 

@@ -120,7 +120,6 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
     
     return InlineKeyboardMarkup(keyboard_layout)
 
-
 def build_item_view_keyboard(container_id: int, current_offset: int, total_items: int, page_size: int) -> InlineKeyboardMarkup:
     """
     [محدث] يبني زر التنقل لعرض العناصر التالية.
@@ -135,7 +134,6 @@ def build_item_view_keyboard(container_id: int, current_offset: int, total_items
         
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")])
     return InlineKeyboardMarkup(keyboard)
-
 
 def build_settings_keyboard(container_id: int, user_id: int) -> InlineKeyboardMarkup:
     """
@@ -156,7 +154,6 @@ def build_settings_keyboard(container_id: int, user_id: int) -> InlineKeyboardMa
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")])
     return InlineKeyboardMarkup(keyboard)
 
-
 def build_share_menu_keyboard(container_id: int) -> InlineKeyboardMarkup:
     """
     [موحد] يبني قائمة المشاركة للحاوية.
@@ -168,7 +165,6 @@ def build_share_menu_keyboard(container_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")]
     ]
     return InlineKeyboardMarkup(keyboard)
-
 
 def build_automation_keyboard(container_id: int) -> InlineKeyboardMarkup:
     """
@@ -196,17 +192,16 @@ def build_automation_keyboard(container_id: int) -> InlineKeyboardMarkup:
     keyboard.append([InlineKeyboardButton("🔙 رجوع للإعدادات", callback_data=f"settings_container:{container_id}")])
     return InlineKeyboardMarkup(keyboard)
 
-
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     """
     [معدل] يبني القائمة الرئيسية.
     """
     keyboard = [
         [InlineKeyboardButton("👤 مساحتي الخاصة", callback_data="my_space")],
-        [InlineKeyboardButton("🤝 المساحات المشتركة", callback_data="shared_spaces")]
+        [InlineKeyboardButton("🤝 المساحات المشتركة", callback_data="shared_spaces")],
+        [InlineKeyboardButton("🤖 سؤال للمرشد الذكي", callback_data="ask_ai_guide")] # [جديد]
     ]
     return InlineKeyboardMarkup(keyboard)
-
 
 def back_button(callback_data: str) -> InlineKeyboardMarkup:
     """

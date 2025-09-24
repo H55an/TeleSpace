@@ -60,11 +60,19 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", handlers.cancel_conversation), CommandHandler("info", handlers.info), CommandHandler("start", handlers.start)]
     )
 
+    # [جديد] معالج محادثة للمرشد الذكي
+    guide_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(handlers.ask_ai_guide_start, pattern="^ask_ai_guide$")],
+        states={AWAITING_GUIDE_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.receive_ai_question)]},
+        fallbacks=[CommandHandler("cancel", handlers.cancel_conversation), CommandHandler("info", handlers.info), CommandHandler("start", handlers.start)]
+    )
+
     # تسجيل كل المعالجات في التطبيق
     application.add_handler(create_container_conv)
     application.add_handler(rename_container_conv)
     application.add_handler(add_items_conv)
     application.add_handler(link_channel_conv)
+    application.add_handler(guide_conv)
     
     # [جديد وموحد] معالج الأتمتة للرسائل من القنوات والمجموعات
     application.add_handler(MessageHandler(
