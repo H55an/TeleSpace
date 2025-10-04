@@ -3,6 +3,7 @@ import re
 from telegram import Message
 from telegram.ext import ContextTypes
 from telegram.error import Forbidden
+from telegram.helpers import escape_markdown
 import keyboards as kb
 import database as db
 
@@ -155,7 +156,8 @@ class GroupProcessor(EntityProcessor):
         # 1. تحقق أولاً مما إذا كانت هناك مجلدات تمت مطابقتها. إذا لم يكن هناك، لا تفعل شيئًا.
         if not final_folder_ids:
             return
-        
+        sender_name = message.from_user.full_name
+        sender_id = message.from_user.id
         thread_id = message.message_thread_id
 
         # 2. بناء الأزرار التفاعلية (نفس منطق القنوات)
@@ -178,7 +180,8 @@ class GroupProcessor(EntityProcessor):
             # هذا الجزء يحتاج إلى معالجة أنواع الرسائل المختلفة (نص، صورة، ملف، الخ)
             
             # للحصول على النص أو التعليق
-            text_or_caption = message.text or message.caption
+            sender_link = f"[{escape_markdown(sender_name, version=2)}](tg://user?id={sender_id})"
+            text_or_caption = f"{escape_markdown((message.text or message.caption), version=2)}\nSent by \| {sender_link}"
 
             # التحقق من نوع الرسالة وإعادة إرسالها
             if message.photo:
@@ -187,7 +190,8 @@ class GroupProcessor(EntityProcessor):
                     photo=message.photo[-1].file_id,
                     caption=text_or_caption,
                     reply_markup=keyboard,
-                    message_thread_id=thread_id
+                    message_thread_id=thread_id,
+                    parse_mode='MarkdownV2'
                 )
             elif message.document:
                 await context.bot.send_document(
@@ -195,7 +199,8 @@ class GroupProcessor(EntityProcessor):
                     document=message.document.file_id,
                     caption=text_or_caption,
                     reply_markup=keyboard,
-                    message_thread_id=thread_id
+                    message_thread_id=thread_id,
+                    parse_mode='MarkdownV2'
                 )
             elif message.video:
                 await context.bot.send_video(
@@ -203,7 +208,8 @@ class GroupProcessor(EntityProcessor):
                     video=message.video.file_id,
                     caption=text_or_caption,
                     reply_markup=keyboard,
-                    message_thread_id=thread_id
+                    message_thread_id=thread_id,
+                    parse_mode='MarkdownV2'
                 )
             elif message.audio:
                 await context.bot.send_audio(
@@ -211,7 +217,8 @@ class GroupProcessor(EntityProcessor):
                     audio=message.audio.file_id,
                     caption=text_or_caption,
                     reply_markup=keyboard,
-                    message_thread_id=thread_id
+                    message_thread_id=thread_id,
+                    parse_mode='MarkdownV2'
                 )
             elif message.voice:
                 await context.bot.send_voice(
@@ -219,14 +226,16 @@ class GroupProcessor(EntityProcessor):
                     voice=message.voice.file_id,
                     caption=text_or_caption,
                     reply_markup=keyboard,
-                    message_thread_id=thread_id
+                    message_thread_id=thread_id,
+                    parse_mode='MarkdownV2'
                 )
             elif message.text:
                 await context.bot.send_message(
                     chat_id=message.chat.id,
                     text=message.text,
                     reply_markup=keyboard,
-                    message_thread_id=thread_id
+                    message_thread_id=thread_id,
+                    parse_mode='MarkdownV2'
                 )
 
         except Forbidden as e:
