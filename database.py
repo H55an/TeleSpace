@@ -511,6 +511,35 @@ def delete_all_items_in_container(container_id: int, user_id: int):
             conn.close()
 
 # --- Share and Permission Functions ---
+def can_user_add_admins(user_id: int, content_id: int) -> bool:
+    """
+    Checks if a user is an owner or an admin with rights to add other admins.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return False
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            # أولاً، تحقق مما إذا كان المستخدم هو المالك
+            cursor.execute("SELECT owner_user_id FROM containers WHERE id = %s", (content_id,))
+            owner_res = cursor.fetchone()
+            if owner_res and owner_res['owner_user_id'] == user_id:
+                return True
+
+            # ثانيًا، تحقق من جدول الصلاحيات
+            cursor.execute(
+                "SELECT can_add_admins FROM permissions WHERE user_id = %s AND content_id = %s AND permission_level = 'admin'",
+                (user_id, content_id)
+            )
+            perm_res = cursor.fetchone()
+            return perm_res and perm_res['can_add_admins'] == 1
+    except psycopg2.Error as e:
+        print(f"DB Error in can_user_add_admins: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 def get_or_create_viewer_share_link(owner_user_id: int, content_type: str, content_id: int) -> str:
     conn = None
     try:
@@ -541,7 +570,7 @@ def get_or_create_viewer_share_link(owner_user_id: int, content_type: str, conte
         if conn:
             conn.close()
 
-def create_share_link(owner_user_id: int, content_type: str, content_id: int, link_type: str) -> str:
+def create_share_link(owner_user_id: int, content_type: str, content_id: int, link_type: str, grants_can_add_admins: int = 0) -> str: # تعديل هنا
     token = str(uuid.uuid4())
     conn = None
     try:
@@ -550,10 +579,10 @@ def create_share_link(owner_user_id: int, content_type: str, content_id: int, li
 
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO shares (share_token, content_type, content_id, owner_user_id, link_type) VALUES (%s, %s, %s, %s, %s)",
-                (token, content_type, content_id, owner_user_id, link_type)
+                "INSERT INTO shares (share_token, content_type, content_id, owner_user_id, link_type, grants_can_add_admins) VALUES (%s, %s, %s, %s, %s, %s)", # تعديل هنا
+                (token, content_type, content_id, owner_user_id, link_type, grants_can_add_admins) # تعديل هنا
             )
-            _log_activity(cursor, owner_user_id, 'CREATE_SHARE_LINK', content_id, content_type, f"Type: {link_type}")
+            _log_activity(cursor, owner_user_id, 'CREATE_SHARE_LINK', content_id, content_type, f"Type: {link_type}, Can Add Admins: {grants_can_add_admins}")
             conn.commit()
             return token
     except psycopg2.Error as e:
@@ -596,25 +625,33 @@ def deactivate_share_link(token: str, user_id: int):
         if conn:
             conn.close()
 
-def grant_permission(user_id: int, content_type: str, content_id: int, new_permission_level: str):
+def grant_permission(user_id: int, content_type: str, content_id: int, new_permission_level: str, can_add_admins: int = 0): # تعديل هنا
     conn = None
     try:
         conn = get_db_connection()
         if not conn: return
 
         with conn.cursor() as cursor:
+            # إذا كان المستخدم هو المالك، يجب أن يحصل على صلاحية إضافة المشرفين دائمًا
+            details = get_container_details(content_id)
+            if details and details['owner_user_id'] == user_id:
+                new_permission_level = 'owner'
+                can_add_admins = 1
+
             query = """
-                INSERT INTO permissions (user_id, content_type, content_id, permission_level)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO permissions (user_id, content_type, content_id, permission_level, can_add_admins)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, content_id, content_type) DO UPDATE SET
-                    permission_level = EXCLUDED.permission_level
+                    permission_level = EXCLUDED.permission_level,
+                    can_add_admins = EXCLUDED.can_add_admins
                 WHERE
-                    permissions.permission_level = 'viewer' AND EXCLUDED.permission_level = 'admin';
+                    (permissions.permission_level = 'viewer' AND EXCLUDED.permission_level = 'admin') OR
+                    (permissions.permission_level = 'admin' AND EXCLUDED.permission_level = 'admin');
             """
-            cursor.execute(query, (user_id, content_type, content_id, new_permission_level))
-            # Log only if a row was actually affected
+            cursor.execute(query, (user_id, content_type, content_id, new_permission_level, can_add_admins)) # تعديل هنا
+
             if cursor.rowcount > 0:
-                _log_activity(cursor, user_id, 'GRANT_PERMISSION', content_id, content_type, f"Level: {new_permission_level}")
+                _log_activity(cursor, user_id, 'GRANT_PERMISSION', content_id, content_type, f"Level: {new_permission_level}, Can Add Admins: {can_add_admins}")
             conn.commit()
     except psycopg2.Error as e:
         print(f"DB Error in grant_permission: {e}")
