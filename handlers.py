@@ -50,6 +50,9 @@ def check_subscription(func):
                 raise Forbidden("User is not a member.")
         except Forbidden:
             # هذا الخطأ يحدث إذا لم يكن المستخدم عضواً
+            if func.__name__ == 'start' and context.args:
+                context.user_data['deep_link_args'] = context.args
+
             text = """
 🛂 أهلاً بك في TeleSpace!
 لاستخدام خدمات البوت، يرجى أولاً الانضمام إلى قناتنا الرسمية. هذا يضمن حصولك على آخر التحديثات والأخبار.
@@ -1175,5 +1178,9 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
     """
     query = update.callback_query
     await query.answer("✅ شكرًا لاشتراكك! أهلاً بك.", show_alert=False)
-    # بعد التحقق الناجح، نعرض القائمة الرئيسية
+
+    if 'deep_link_args' in context.user_data:
+        context.args = context.user_data.pop('deep_link_args')
+
+    # بعد التحقق الناجح، نعرض القائمة الرئيسية (مع الوسائط المستعادة إن وجدت)
     await start(update, context)
