@@ -69,7 +69,7 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
     top_buttons = []
     if permission in ['owner', 'admin']:
         top_buttons.append(InlineKeyboardButton("⚙️", callback_data=f"settings_container:{container_id}"))
-    if permission == 'owner':
+    if permission in ['owner', 'admin']:
         top_buttons.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_container:{container_id}"))
     
     # Add Leave button only for directly shared containers (not owned)
@@ -154,16 +154,22 @@ def build_settings_keyboard(container_id: int, user_id: int) -> InlineKeyboardMa
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")])
     return InlineKeyboardMarkup(keyboard)
 
-def build_share_menu_keyboard(container_id: int) -> InlineKeyboardMarkup:
+def build_share_menu_keyboard(container_id: int, user_id: int) -> InlineKeyboardMarkup:
     """
     [موحد] يبني قائمة المشاركة للحاوية.
     """
     keyboard = [
-        [InlineKeyboardButton("👁️ رابط مشاهدة", callback_data=f"get_viewer_link:{container_id}")],
-        [InlineKeyboardButton("👥 إضافة مشرف", callback_data=f"get_admin_link:{container_id}")],
+        [InlineKeyboardButton("👁️ رابط مشاهدة", callback_data=f"get_viewer_link:{container_id}")]
+    ]
+
+    # [جديد] تحقق من صلاحية إضافة مشرفين
+    if db.can_user_add_admins(user_id, container_id):
+        keyboard.append([InlineKeyboardButton("👥 إضافة مشرف", callback_data=f"get_admin_link:{container_id}")])
+
+    keyboard.extend([
         [InlineKeyboardButton("📊 إحصائيات", callback_data=f"statistics_container:{container_id}")],
         [InlineKeyboardButton("🔙 رجوع", callback_data=f"container:{container_id}")]
-    ]
+    ])
     return InlineKeyboardMarkup(keyboard)
 
 def build_automation_keyboard(container_id: int) -> InlineKeyboardMarkup:

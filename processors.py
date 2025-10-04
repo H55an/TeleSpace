@@ -152,5 +152,91 @@ class GroupProcessor(EntityProcessor):
         return {folder_name_map[ht] for ht in normalized_hashtags if ht in folder_name_map}
 
     async def update_ui(self, context: ContextTypes.DEFAULT_TYPE, message: Message, linked_entity: dict, final_folder_ids: set, all_folders_in_section: list):
-        # لا تفعل شيئًا للمجموعات لضمان الأرشفة الصامتة
-        pass
+        # 1. تحقق أولاً مما إذا كانت هناك مجلدات تمت مطابقتها. إذا لم يكن هناك، لا تفعل شيئًا.
+        if not final_folder_ids:
+            return
+        
+        thread_id = message.message_thread_id
+
+        # 2. بناء الأزرار التفاعلية (نفس منطق القنوات)
+        folder_id_map = {folder['id']: folder['name'] for folder in all_folders_in_section}
+        final_folders_for_keyboard = [
+            {'id': fid, 'name': folder_id_map[fid]} 
+            for fid in final_folder_ids 
+            if fid in folder_id_map
+        ]
+
+        try:
+            bot_username = (await context.bot.get_me()).username
+            keyboard = kb.build_channel_post_keyboard(final_folders_for_keyboard, linked_entity['container_id'], bot_username)
+
+            # 3. [مهم] حذف رسالة المستخدم الأصلية
+            # يجب أن يمتلك البوت صلاحية "حذف الرسائل" في المجموعة
+            await context.bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+
+            # 4. [مهم] إعادة إرسال المحتوى مع الأزرار
+            # هذا الجزء يحتاج إلى معالجة أنواع الرسائل المختلفة (نص، صورة، ملف، الخ)
+            
+            # للحصول على النص أو التعليق
+            text_or_caption = message.text or message.caption
+
+            # التحقق من نوع الرسالة وإعادة إرسالها
+            if message.photo:
+                await context.bot.send_photo(
+                    chat_id=message.chat.id,
+                    photo=message.photo[-1].file_id,
+                    caption=text_or_caption,
+                    reply_markup=keyboard,
+                    message_thread_id=thread_id
+                )
+            elif message.document:
+                await context.bot.send_document(
+                    chat_id=message.chat.id,
+                    document=message.document.file_id,
+                    caption=text_or_caption,
+                    reply_markup=keyboard,
+                    message_thread_id=thread_id
+                )
+            elif message.video:
+                await context.bot.send_video(
+                    chat_id=message.chat.id,
+                    video=message.video.file_id,
+                    caption=text_or_caption,
+                    reply_markup=keyboard,
+                    message_thread_id=thread_id
+                )
+            elif message.audio:
+                await context.bot.send_audio(
+                    chat_id=message.chat.id,
+                    audio=message.audio.file_id,
+                    caption=text_or_caption,
+                    reply_markup=keyboard,
+                    message_thread_id=thread_id
+                )
+            elif message.voice:
+                await context.bot.send_voice(
+                    chat_id=message.chat.id,
+                    voice=message.voice.file_id,
+                    caption=text_or_caption,
+                    reply_markup=keyboard,
+                    message_thread_id=thread_id
+                )
+            elif message.text:
+                await context.bot.send_message(
+                    chat_id=message.chat.id,
+                    text=message.text,
+                    reply_markup=keyboard,
+                    message_thread_id=thread_id
+                )
+
+        except Forbidden as e:
+            # هذا الخطأ يحدث إذا لم يكن لدى البوت الصلاحيات الكافية
+            print(f"Failed to process message in group {message.chat.id}. Reason: {e}")
+            # يمكنك إرسال رسالة للمالك لإعلامه بالمشكلة
+            owner_id = linked_entity['user_id']
+            await context.bot.send_message(
+                chat_id=owner_id,
+                text=f"⚠️ فشلت أتمتة الرسائل في المجموعة '{message.chat.title}'.\nالسبب: ليس لدي صلاحية 'حذف الرسائل' أو 'إرسال الرسائل'. يرجى مراجعة صلاحياتي."
+            )
+        except Exception as e:
+            print(f"An unexpected error occurred while processing group message: {e}")

@@ -50,6 +50,9 @@ def check_subscription(func):
                 raise Forbidden("User is not a member.")
         except Forbidden:
             # هذا الخطأ يحدث إذا لم يكن المستخدم عضواً
+            if func.__name__ == 'start' and context.args:
+                context.user_data['deep_link_args'] = context.args
+
             text = """
 🛂 أهلاً بك في TeleSpace!
 لاستخدام خدمات البوت، يرجى أولاً الانضمام إلى قناتنا الرسمية. هذا يضمن حصولك على آخر التحديثات والأخبار.
@@ -186,6 +189,8 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
     """[معدل] يعرض ويرسل محتويات حاوية (مجلد)."""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
+    query = update.callback_query
+    await query.answer()
 
     if not db.container_exists(container_id):
         await context.bot.send_message(chat_id, "⚠️ عذرًا، يبدو أن هذا المجلد قد تم حذفه بالفعل.")
@@ -285,7 +290,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 if share['link_type'] == 'admin' and is_already_privileged:
                     await update.message.reply_text(f"👍 أنت بالفعل مشرف لـ {container_type_ar} '{details['name']}'.")
                 else:
-                    db.grant_permission(user.id, details['type'], share['content_id'], share['link_type'])
+                    db.grant_permission(user.id, details['type'], share['content_id'], share['link_type'], can_add_admins=share['grants_can_add_admins'])
                     if share['link_type'] == 'admin':
                         db.deactivate_share_link(token, user.id)
                     
@@ -419,24 +424,49 @@ async def button_press_router(update: Update, context: ContextTypes.DEFAULT_TYPE
             return await query.message.delete()
         details = db.get_container_details(container_id)
         text = f"🔗 *مشاركة: {escape_markdown(details['name'], version=2)}*\n\."
-        keyboard = kb.build_share_menu_keyboard(container_id)
+        # [تعديل] مرر user_id هنا
+        keyboard = kb.build_share_menu_keyboard(container_id, user_id)
         await query.message.edit_text(text, reply_markup=keyboard, parse_mode='MarkdownV2')
 
-    elif data.startswith(("get_viewer_link:", "get_admin_link:")):
-        parts = data.split(':')
-        link_type = 'viewer' if parts[0] == "get_viewer_link" else 'admin'
-        container_id = int(parts[1])
+    elif data.startswith("get_viewer_link:"):
+        # هذا الجزء يبقى كما هو تقريبًا
+        container_id = int(data.split(':')[1])
         if not db.container_exists(container_id):
             await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
             return await query.message.delete()
         details = db.get_container_details(container_id)
-        
-        if link_type == 'viewer':
-            token = db.get_or_create_viewer_share_link(user_id, details['type'], container_id)
-            title = "رابط المشاركة \(مشاهدة فقط\)\n_انقر نقرة واحدة لنسخه_"
-        else: # admin
-            token = db.create_share_link(user_id, details['type'], container_id, 'admin')
-            title = "رابط دعوة مشرف \(يستخدم لمرة واحدة\)\n_انقر نقرة واحدة لنسخه_"
+        token = db.get_or_create_viewer_share_link(user_id, details['type'], container_id)
+        title = "رابط المشاركة \(مشاهدة فقط\)\n_انقر نقرة واحدة لنسخه_"
+        bot_username = (await context.bot.get_me()).username
+        share_link = f"https://t.me/{bot_username}?start={token}"
+        text = f"✅ {title}:\n\n`{share_link}`"
+        await query.message.edit_text(text, reply_markup=kb.back_button(f"share_menu_container:{container_id}"), parse_mode='MarkdownV2')
+
+    elif data.startswith("get_admin_link:"):
+        # [جديد] هذا البلوك سيعرض السؤال
+        container_id = int(data.split(':')[1])
+        text = "❓ هل تريد السماح لهذا المشرف بإضافة مشرفين آخرين؟"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ نعم", callback_data=f"create_admin_link:1:{container_id}")],
+            [InlineKeyboardButton("❌ لا", callback_data=f"create_admin_link:0:{container_id}")],
+            [InlineKeyboardButton("🔙 رجوع", callback_data=f"share_menu_container:{container_id}")]
+        ])
+        await query.message.edit_text(text, reply_markup=keyboard)
+
+    elif data.startswith("create_admin_link:"):
+        # [جديد] هذا البلوك سينشئ الرابط بناءً على اختيار المستخدم
+        _, can_add, container_id_str = data.split(':')
+        container_id = int(container_id_str)
+        grants_can_add_admins = int(can_add)
+
+        if not db.container_exists(container_id):
+            await query.answer("⚠️ عذرًا، يبدو أن هذا العنصر قد تم حذفه بالفعل.", show_alert=False)
+            return await query.message.delete()
+
+        details = db.get_container_details(container_id)
+
+        token = db.create_share_link(user_id, details['type'], container_id, 'admin', grants_can_add_admins=grants_can_add_admins)
+        title = "رابط دعوة مشرف \(يستخدم لمرة واحدة\)\n_انقر نقرة واحدة لنسخه_"
 
         bot_username = (await context.bot.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={token}"
@@ -809,19 +839,18 @@ async def ask_ai_guide_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = """
 🤖 *مرشد TeleSpace الذكي*
 
-أهلاً بك! أنا هنا لمساعدتك في فهم كيفية استخدام البوت.
+أهلاً بك\! أنا هنا لمساعدتك في فهم كيفية استخدام البوت\.
 
-**اطرح سؤالك بوضوح** (مثال: "كيف أشارك مجلد؟" أو "ما الفرق بين القسم والمجلد؟").
+**اطرح سؤالك بوضوح** \(مثال: "كيف أشارك مجلد؟" أو "ما الفرق بين القسم والمجلد؟"\)\.
 
-سأجيبك بالاعتماد على دليل الاستخدام الرسمي للبوت.
+سأجيبك بالاعتماد على دليل الاستخدام الرسمي للبوت\.
 
-*للخروج من وضع الإرشاد، أرسل /cancel*.
+*للخروج من وضع الإرشاد، أرسل /cancel*\.
     """
     if query and query.message:
         await query.message.edit_text(
             text, 
-            # parse_mode='MarkdownV2', 
-            reply_markup=kb.back_button('back_to_main')
+            parse_mode='MarkdownV2'
         )
     
     return AWAITING_GUIDE_QUESTION
@@ -1151,5 +1180,9 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
     """
     query = update.callback_query
     await query.answer("✅ شكرًا لاشتراكك! أهلاً بك.", show_alert=False)
-    # بعد التحقق الناجح، نعرض القائمة الرئيسية
+
+    if 'deep_link_args' in context.user_data:
+        context.args = context.user_data.pop('deep_link_args')
+
+    # بعد التحقق الناجح، نعرض القائمة الرئيسية (مع الوسائط المستعادة إن وجدت)
     await start(update, context)

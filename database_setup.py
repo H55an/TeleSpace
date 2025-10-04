@@ -61,6 +61,7 @@ def setup_database():
             content_id INTEGER NOT NULL,
             owner_user_id BIGINT NOT NULL,
             link_type TEXT NOT NULL, -- 'viewer' or 'admin'
+            grants_can_add_admins INTEGER NOT NULL DEFAULT 0,
             is_used BOOLEAN NOT NULL DEFAULT FALSE,
             creation_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             FOREIGN KEY (owner_user_id) REFERENCES users (user_id) ON DELETE CASCADE
@@ -75,6 +76,7 @@ def setup_database():
             content_type TEXT NOT NULL, -- 'section' or 'folder'
             content_id INTEGER NOT NULL,
             permission_level TEXT NOT NULL, -- 'viewer' or 'admin'
+            can_add_admins INTEGER NOT NULL DEFAULT 0,
             grant_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
             FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE,
             UNIQUE (user_id, content_id, content_type)
