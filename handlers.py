@@ -809,19 +809,18 @@ async def ask_ai_guide_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = """
 🤖 *مرشد TeleSpace الذكي*
 
-أهلاً بك! أنا هنا لمساعدتك في فهم كيفية استخدام البوت.
+أهلاً بك\! أنا هنا لمساعدتك في فهم كيفية استخدام البوت\.
 
-**اطرح سؤالك بوضوح** (مثال: "كيف أشارك مجلد؟" أو "ما الفرق بين القسم والمجلد؟").
+**اطرح سؤالك بوضوح** \(مثال: "كيف أشارك مجلد؟" أو "ما الفرق بين القسم والمجلد؟"\)\.
 
-سأجيبك بالاعتماد على دليل الاستخدام الرسمي للبوت.
+سأجيبك بالاعتماد على دليل الاستخدام الرسمي للبوت\.
 
-*للخروج من وضع الإرشاد، أرسل /cancel*.
+*للخروج من وضع الإرشاد، أرسل /cancel*\.
     """
     if query and query.message:
         await query.message.edit_text(
             text, 
-            # parse_mode='MarkdownV2', 
-            reply_markup=kb.back_button('back_to_main')
+            parse_mode='MarkdownV2'
         )
     
     return AWAITING_GUIDE_QUESTION
