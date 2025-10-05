@@ -181,14 +181,15 @@ class GroupProcessor(EntityProcessor):
             
             # للحصول على النص أو التعليق
             sender_link = f"[{escape_markdown(sender_name, version=2)}](tg://user?id={sender_id})"
-            text_or_caption = f"{escape_markdown((message.text or message.caption), version=2)}\nSent by \| {sender_link}"
+            text_or_caption = f"{escape_markdown((message.text or message.caption), version=2)}"
+            caption = text_or_caption if len(text_or_caption) <= 990 else text_or_caption[:990] + " \.\.\." + f"\nSent by \| {sender_link}"
 
             # التحقق من نوع الرسالة وإعادة إرسالها
             if message.photo:
                 await context.bot.send_photo(
                     chat_id=message.chat.id,
                     photo=message.photo[-1].file_id,
-                    caption=text_or_caption,
+                    caption=caption,
                     reply_markup=keyboard,
                     message_thread_id=thread_id,
                     parse_mode='MarkdownV2'
@@ -197,7 +198,7 @@ class GroupProcessor(EntityProcessor):
                 await context.bot.send_document(
                     chat_id=message.chat.id,
                     document=message.document.file_id,
-                    caption=text_or_caption,
+                    caption=caption,
                     reply_markup=keyboard,
                     message_thread_id=thread_id,
                     parse_mode='MarkdownV2'
@@ -206,7 +207,7 @@ class GroupProcessor(EntityProcessor):
                 await context.bot.send_video(
                     chat_id=message.chat.id,
                     video=message.video.file_id,
-                    caption=text_or_caption,
+                    caption=caption,
                     reply_markup=keyboard,
                     message_thread_id=thread_id,
                     parse_mode='MarkdownV2'
@@ -215,7 +216,7 @@ class GroupProcessor(EntityProcessor):
                 await context.bot.send_audio(
                     chat_id=message.chat.id,
                     audio=message.audio.file_id,
-                    caption=text_or_caption,
+                    caption=caption,
                     reply_markup=keyboard,
                     message_thread_id=thread_id,
                     parse_mode='MarkdownV2'
@@ -224,15 +225,16 @@ class GroupProcessor(EntityProcessor):
                 await context.bot.send_voice(
                     chat_id=message.chat.id,
                     voice=message.voice.file_id,
-                    caption=text_or_caption,
+                    caption=caption,
                     reply_markup=keyboard,
                     message_thread_id=thread_id,
                     parse_mode='MarkdownV2'
                 )
             elif message.text:
+                text = f"{escape_markdown(message.text, version=2)}\nSent by \| {sender_link}"
                 await context.bot.send_message(
                     chat_id=message.chat.id,
-                    text=message.text,
+                    text=text,
                     reply_markup=keyboard,
                     message_thread_id=thread_id,
                     parse_mode='MarkdownV2'
