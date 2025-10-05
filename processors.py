@@ -182,7 +182,7 @@ class GroupProcessor(EntityProcessor):
             # للحصول على النص أو التعليق
             sender_link = f"[{escape_markdown(sender_name, version=2)}](tg://user?id={sender_id})"
             text_or_caption = f"{escape_markdown((message.text or message.caption), version=2)}"
-            caption = text_or_caption if len(text_or_caption) <= 990 else text_or_caption[:990] + " \.\.\." + f"\nSent by \| {sender_link}"
+            caption = text_or_caption + f"\nSent by \| {sender_link}" if len(text_or_caption) <= 990 else text_or_caption[:990] + " \.\.\." + f"\nSent by \| {sender_link}"
 
             # التحقق من نوع الرسالة وإعادة إرسالها
             if message.photo:
