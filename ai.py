@@ -35,7 +35,7 @@ def get_guide_response(question: str) -> str:
                 "Content-Type": "application/json"
             },
             json={
-                "model": "deepseek/deepseek-chat-v3.1:free",
+                "model": "tngtech/deepseek-r1t2-chimera:free",
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"""قاعدة المعرفة:

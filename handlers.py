@@ -303,7 +303,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             await update.message.reply_text("⚠️ عذرًا، الرابط غير صالح أو مستخدم.")
 
     # عرض القائمة الرئيسية
-    first_name = escape_markdown(user.first_name, version=2)
+    first_name = f"[{escape_markdown(user.first_name, version=2)}](tg://user?id={user.id})"
     developer_link = f"[{escape_markdown(config.DEVELOPER_NAME, version=2)}](tg://user?id={config.DEVELOPER_ID})"
     keyboard = kb.main_menu_keyboard()
     reply_text = f"""
@@ -315,9 +315,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 💾 *احفظ* ملفاتك ورسائلك المهمة\.
 🤝 *شارك* محتواك بسهولة وأمان\.
     
-*استكشف مساحتك أو ابدأ بتصفح ما شاركه الآخرون معك*\.
+_استكشف مساحتك أو ابدأ بتصفح ما شاركه الآخرون معك_\.
 
-_ارسل /info لقرائة دليل استخدام TeleSpace_\.
+*تطوير \| {developer_link}*
 """
     
     if update.callback_query:
