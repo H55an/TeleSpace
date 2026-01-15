@@ -52,6 +52,17 @@ def setup_database():
         )
         """)
 
+        # --- File Locations Table ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS file_locations (
+            location_id SERIAL PRIMARY KEY,
+            item_id INTEGER REFERENCES items(item_record_id) ON DELETE CASCADE,
+            channel_id BIGINT NOT NULL,
+            message_id INTEGER NOT NULL,
+            UNIQUE(channel_id, message_id)
+        );
+        """)
+
         # --- Share Tokens Table ---
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS shares (
@@ -160,6 +171,7 @@ def setup_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_log_user_id ON activity_log (user_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_linked_entities_entity_id ON linked_entities (entity_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_archived_content_entity_id_message_id ON archived_content (entity_id, message_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_file_locations_item_id ON file_locations(item_id);")
 
         conn.commit()
         print("Database and tables have been successfully set up/updated!")

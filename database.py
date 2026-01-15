@@ -362,6 +362,49 @@ def get_parent_container_id(container_id: int) -> int | None:
         if conn:
             conn.close()
 
+# --- File Location Functions ---
+def add_file_location(item_id: int, channel_id: int, message_id: int):
+    """
+    Adds a physical file location to the file_locations table.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO file_locations (item_id, channel_id, message_id) VALUES (%s, %s, %s) ON CONFLICT (channel_id, message_id) DO NOTHING",
+                (item_id, channel_id, message_id)
+            )
+            conn.commit()
+    except psycopg2.Error as e:
+        print(f"DB Error in add_file_location: {e}")
+    except psycopg2.Error as e:
+        print(f"DB Error in add_file_location: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def get_file_location(item_id: int):
+    """
+    Retrieves the physical location (channel_id, message_id) for an item.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return None
+
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute("SELECT channel_id, message_id FROM file_locations WHERE item_id = %s", (item_id,))
+            return cursor.fetchone()
+    except psycopg2.Error as e:
+        print(f"DB Error in get_file_location: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
 # --- Item Functions ---
 def add_item(container_id: int, user_id: int, item_name: str, item_type: str, content: str, file_unique_id: str = None, file_id: str = None) -> int | None:
     """
