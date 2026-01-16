@@ -1,11 +1,10 @@
-# processors.py
 import re
 from telegram import Message
 from telegram.ext import ContextTypes
 from telegram.error import Forbidden
 from telegram.helpers import escape_markdown
-import keyboards as kb
-import database as db
+import app.bot.keyboards as kb
+import app.shared.database as db
 
 class EntityProcessor:
     """Base class for processing updates from different entity types."""
@@ -20,7 +19,7 @@ class EntityProcessor:
         user_id = linked_entity['user_id']
 
         # 1. Get all available folders for the section.
-        all_folders_in_section = db.get_all_folders_recursively(section_id)
+        all_folders_in_section = db.containers.get_all_folders_recursively(section_id)
         if not all_folders_in_section:
             return # No folders to archive to.
 
@@ -28,7 +27,7 @@ class EntityProcessor:
         current_matched_folder_ids = await self.get_target_folders(message, linked_entity, all_folders_in_section)
 
         # 3. Get previously archived folders for this message.
-        previously_archived = db.get_archived_folders_for_content(entity_id, message_id)
+        previously_archived = db.automation.get_archived_folders_for_content(entity_id, message_id)
         previously_archived_ids = set(previously_archived.keys())
 
         # 4. Calculate changes.
@@ -39,8 +38,8 @@ class EntityProcessor:
         for folder_id in folders_to_remove:
             item_id_to_delete = previously_archived.get(folder_id)
             if item_id_to_delete:
-                db.delete_item(item_id_to_delete, user_id)
-                db.remove_archived_content(entity_id, message_id, folder_id)
+                db.items.delete_item(item_id_to_delete, user_id)
+                db.automation.remove_archived_content(entity_id, message_id, folder_id)
                 print(f"Removed item {item_id_to_delete} from folder {folder_id} for message {message_id}")
 
         # 6. Execute additions.
@@ -49,9 +48,9 @@ class EntityProcessor:
             if item_data:
                 for folder_id in folders_to_add:
                     if folder_id not in previously_archived_ids:
-                        item_id = db.add_item(container_id=folder_id, user_id=user_id, **item_data)
+                        item_id = db.items.add_item(container_id=folder_id, user_id=user_id, **item_data)
                         if item_id:
-                            db.add_archived_content(entity_id, message_id, folder_id, item_id)
+                            db.automation.add_archived_content(entity_id, message_id, folder_id, item_id)
                             print(f"Archived message {message_id} to folder {folder_id} with item_id {item_id}")
 
         # 7. Update UI if necessary.
@@ -129,13 +128,13 @@ class GroupProcessor(EntityProcessor):
         thread_id = message.message_thread_id if message.message_thread_id is not None else 0
         
         # جلب اسم الموضوع من الجدول الموحد
-        topic_name = db.get_topic_name_by_thread_id(message.chat.id, thread_id)
+        topic_name = db.automation.get_topic_name_by_thread_id(message.chat.id, thread_id)
 
         if not topic_name:
             return set()
 
         # ابحث عن "قسم فرعي" يطابق اسم الموضوع
-        all_sub_containers = db.get_all_containers_recursively(linked_entity['container_id'])
+        all_sub_containers = db.containers.get_all_containers_recursively(linked_entity['container_id'])
         target_section = next(
             (c for c in all_sub_containers if c['type'] == 'section' and c['name'].lower() == topic_name.lower()),
             None
@@ -145,7 +144,7 @@ class GroupProcessor(EntityProcessor):
             return set()
 
         # ابحث عن المجلدات داخل القسم الفرعي المطابق فقط
-        folders_in_topic_section = db.get_all_folders_recursively(target_section['id'])
+        folders_in_topic_section = db.containers.get_all_folders_recursively(target_section['id'])
         if not folders_in_topic_section:
             return set()
             
@@ -251,3 +250,10 @@ class GroupProcessor(EntityProcessor):
             )
         except Exception as e:
             print(f"An unexpected error occurred while processing group message: {e}")
+
+# IMPORTANT: Export PROCESSORS so it can be used by handlers
+PROCESSORS = {
+    'channel': ChannelProcessor(),
+    'group': GroupProcessor(),
+    'supergroup': GroupProcessor(),
+}

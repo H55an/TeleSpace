@@ -1,5 +1,3 @@
-# main.py
-
 from telegram import Update
 from telegram.ext import (
     Application, 
@@ -11,9 +9,9 @@ from telegram.ext import (
 )
 
 # نستورد كل الأدوات اللازمة من ملفاتنا
-import config
-from constants import *
-import handlers
+from app.shared import config
+from app.shared.constants import *
+import app.bot.handlers as handlers
 
 def main() -> None:
     """

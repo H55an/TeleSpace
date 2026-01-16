@@ -1,15 +1,15 @@
-# keyboards.py
-
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-import database as db
-import config
+from app.shared.database import containers as db_containers
+from app.shared.database import auth as db_auth
+from app.shared.database import automation as db_automation
+from app.shared import config
 
 def build_my_space_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """
     [معدل] تبني لوحة مفاتيح للمساحة الشخصية للمستخدم.
     """
     keyboard_layout = []
-    root_containers = db.get_root_containers(user_id)
+    root_containers = db_containers.get_root_containers(user_id)
 
     # عرض الحاويات التي يملكها المستخدم فقط
     owned_containers = [c for c in root_containers if c['owner_user_id'] == user_id]
@@ -38,7 +38,7 @@ def build_shared_spaces_keyboard(user_id: int) -> InlineKeyboardMarkup:
     [معدل] تبني لوحة مفاتيح للمساحات المشتركة.
     """
     keyboard_layout = []
-    shared_containers = db.get_shared_containers_for_user(user_id)
+    shared_containers = db_containers.get_shared_containers_for_user(user_id)
 
     for container in shared_containers:
         icon = "🗂️" if container['type'] == 'section' else "📁"
@@ -59,11 +59,11 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
     [موحد] يبني واجهة عرض الحاوية (قسم أو مجلد) بشكل ديناميكي.
     """
     keyboard_layout = []
-    container_details = db.get_container_details(container_id)
+    container_details = db_containers.get_container_details(container_id)
     if not container_details:
         return InlineKeyboardMarkup([[InlineKeyboardButton("❌ خطأ: الحاوية غير موجودة", callback_data="my_space")]])
 
-    permission = db.get_permission_level(user_id, container_details['type'], container_id)
+    permission = db_auth.get_permission_level(user_id, container_details['type'], container_id)
 
     # Add Settings and Share buttons for the current container
     top_buttons = []
@@ -73,7 +73,7 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
         top_buttons.append(InlineKeyboardButton("🔗", callback_data=f"share_menu_container:{container_id}"))
     
     # Add Leave button only for directly shared containers (not owned)
-    is_directly_shared = db.has_direct_permission(user_id, container_details['type'], container_id)
+    is_directly_shared = db_auth.has_direct_permission(user_id, container_details['type'], container_id)
     if is_directly_shared and permission != 'owner':
         if permission == 'admin':
             top_buttons.append(InlineKeyboardButton("🚪 مغادرة", callback_data=f"leave_item_prompt_container:{container_id}"))
@@ -85,9 +85,9 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
         keyboard_layout.append(top_buttons)
 
     # عرض المحتويات الفرعية (أقسام ومجلدات)
-    child_containers = db.get_child_containers(container_id)
+    child_containers = db_containers.get_child_containers(container_id)
     for child in child_containers:
-        child_permission = db.get_permission_level(user_id, child['type'], child['id'])
+        child_permission = db_auth.get_permission_level(user_id, child['type'], child['id'])
         prefix = "" if child_permission == 'owner' else "🔗 "
         icon = "🗂️" if child['type'] == 'section' else "📁"
         
@@ -115,7 +115,7 @@ def build_container_view_keyboard(container_id: int, user_id: int) -> InlineKeyb
         keyboard_layout.append(action_buttons)
 
     # زر الرجوع
-    back_button_data = db.get_back_navigation(user_id, container_id)
+    back_button_data = db_containers.get_back_navigation(user_id, container_id)
     keyboard_layout.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_button_data)])
     
     return InlineKeyboardMarkup(keyboard_layout)
@@ -139,8 +139,8 @@ def build_settings_keyboard(container_id: int, user_id: int) -> InlineKeyboardMa
     """
     [موحد] يبني قائمة الإعدادات للحاوية.
     """
-    details = db.get_container_details(container_id)
-    permission = db.get_permission_level(user_id, details['type'], container_id)
+    details = db_containers.get_container_details(container_id)
+    permission = db_auth.get_permission_level(user_id, details['type'], container_id)
 
     keyboard = [
         [InlineKeyboardButton("✏️ إعادة تسمية", callback_data=f"rename_container:{container_id}")],
@@ -163,7 +163,7 @@ def build_share_menu_keyboard(container_id: int, user_id: int) -> InlineKeyboard
     ]
 
     # [جديد] تحقق من صلاحية إضافة مشرفين
-    if db.can_user_add_admins(user_id, container_id):
+    if db_auth.can_user_add_admins(user_id, container_id):
         keyboard.append([InlineKeyboardButton("👥 إضافة مشرف", callback_data=f"get_admin_link:{container_id}")])
 
     keyboard.extend([
@@ -176,7 +176,7 @@ def build_automation_keyboard(container_id: int) -> InlineKeyboardMarkup:
     """
     [معدل وجديد] يبني لوحة مفاتيح التحكم في ميزة الأتمتة.
     """
-    linked_entity = db.get_linked_entity_by_container(container_id)
+    linked_entity = db_automation.get_linked_entity_by_container(container_id)
     keyboard = []
 
     if not linked_entity:

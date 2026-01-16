@@ -1,7 +1,6 @@
-# database_setup.py
-
+# setup.py
 import psycopg2
-import config
+from app.shared import config
 
 def setup_database():
     """

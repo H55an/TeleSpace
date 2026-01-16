@@ -1,6 +1,5 @@
-# ai.py
 import requests
-import config
+from . import config
 import os
 
 # مسار ملف قاعدة المعرفة
