@@ -25,52 +25,83 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     db_users.add_user_if_not_exists(user_id=user.id, first_name=user.first_name)
 
-    # [جديد] معالجة الروابط العميقة من أزرار القنوات
-    if context.args and context.args[0].startswith("folder_"):
-        try:
-            _, section_id_str, folder_id_str = context.args[0].split('_')
-            section_id = int(section_id_str)
-            folder_id = int(folder_id_str)
-
-            # منح المستخدم صلاحية مشاهدة للقسم الرئيسي تلقائيًا
-            db_auth.grant_viewer_permission_for_section(user.id, section_id)
-            
-            # مسح بيانات المحادثة السابقة ونقل المستخدم مباشرة إلى المجلد
-            context.user_data.clear()
-            await show_container(update, context, folder_id)
+    # [جديد] معالج الروابط العميقة (Phase 4)
+    if context.args:
+        arg = context.args[0]
+        
+        # 1. Login Handshake
+        if arg.startswith("login_"):
+            request_id = arg.split('_')[1]
+            token = db_auth.approve_auth_request(request_id, user.id, user.first_name)
+            if token:
+                await update.message.reply_text("✅ You have successfully logged into the TeleSpace App.")
+            else:
+                await update.message.reply_text("⚠️ Login request not found or expired.")
             return ConversationHandler.END
-        except (ValueError, IndexError) as e:
-            print(f"Error processing deep link: {e}")
-            # في حالة الخطأ، يتم توجيهه إلى القائمة الرئيسية
-            pass # Fall through to the main menu
+
+        # 2. Upload Redirect
+        elif arg.startswith("upload_"):
+            try:
+                folder_id = int(arg.split('_')[1])
+                # Import here to avoid circular imports if any
+                from .upload import start_upload_from_deeplink
+                return await start_upload_from_deeplink(update, context, folder_id)
+            except (ValueError, IndexError):
+                await update.message.reply_text("⚠️ Invalid upload link.")
+                # Fall through to main menu
+
+        # 3. Existing folder deep link
+        elif arg.startswith("folder_"):
+            try:
+                parts = arg.split('_')
+                if len(parts) >= 3:
+                    # _, section_id, folder_id = parts (handling legacy format if needed)
+                    # Based on existing code: _, section_id_str, folder_id_str = context.args[0].split('_')
+                    # But split('_') on "folder_1_2" gives ["folder", "1", "2"]
+                    _, section_id_str, folder_id_str = arg.split('_')
+                    section_id = int(section_id_str)
+                    folder_id = int(folder_id_str)
+
+                    # منح المستخدم صلاحية مشاهدة للقسم الرئيسي تلقائيًا
+                    db_auth.grant_viewer_permission_for_section(user.id, section_id)
+                    
+                    # مسح بيانات المحادثة السابقة ونقل المستخدم مباشرة إلى المجلد
+                    context.user_data.clear()
+                    await show_container(update, context, folder_id)
+                    return ConversationHandler.END
+            except (ValueError, IndexError) as e:
+                print(f"Error processing deep link: {e}")
+                pass # Fall through to the main menu
 
     # معالجة روابط المشاركة الحالية
     context.user_data.clear()
     if context.args:
         token = context.args[0]
-        share = db_auth.get_share_by_token(token)
-        
-        if share and not share['is_used']:
-            details = db_containers.get_container_details(share['content_id'])
-            if details:
-                current_permission = db_auth.get_permission_level(user.id, details['type'], share['content_id'])
-                is_already_privileged = current_permission in ['owner', 'admin']
-                container_type_ar = "قسم" if details['type'] == 'section' else "مجلد"
+        # Ignore if it was one of the prefixes above
+        if not (token.startswith("login_") or token.startswith("upload_") or token.startswith("folder_")):
+             share = db_auth.get_share_by_token(token)
+             
+             if share and not share['is_used']:
+                 details = db_containers.get_container_details(share['content_id'])
+                 if details:
+                    current_permission = db_auth.get_permission_level(user.id, details['type'], share['content_id'])
+                    is_already_privileged = current_permission in ['owner', 'admin']
+                    container_type_ar = "قسم" if details['type'] == 'section' else "مجلد"
 
-                if share['link_type'] == 'admin' and is_already_privileged:
-                    await update.message.reply_text(f"👍 أنت بالفعل مشرف لـ {container_type_ar} '{details['name']}'.")
-                else:
-                    db_auth.grant_permission(user.id, details['type'], share['content_id'], share['link_type'], can_add_admins=share['grants_can_add_admins'])
-                    if share['link_type'] == 'admin':
-                        db_auth.deactivate_share_link(token, user.id)
-                    
-                    await update.message.reply_text(
-                        f"✅ لقد حصلت على صلاحية وصول إلى {container_type_ar} '{details['name']}'.\n\nيمكنك تصفحه في المساحات المشتركة."
-                    )
-            else:
-                 await update.message.reply_text("⚠️ عذرًا، المحتوى المشار إليه لم يعد موجودًا.")
-        else:
-            await update.message.reply_text("⚠️ عذرًا، الرابط غير صالح أو مستخدم.")
+                    if share['link_type'] == 'admin' and is_already_privileged:
+                        await update.message.reply_text(f"👍 أنت بالفعل مشرف لـ {container_type_ar} '{details['name']}'.")
+                    else:
+                        db_auth.grant_permission(user.id, details['type'], share['content_id'], share['link_type'], can_add_admins=share['grants_can_add_admins'])
+                        if share['link_type'] == 'admin':
+                            db_auth.deactivate_share_link(token, user.id)
+                        
+                        await update.message.reply_text(
+                            f"✅ لقد حصلت على صلاحية وصول إلى {container_type_ar} '{details['name']}'.\n\nيمكنك تصفحه في المساحات المشتركة."
+                        )
+                 else:
+                      await update.message.reply_text("⚠️ عذرًا، المحتوى المشار إليه لم يعد موجودًا.")
+             else:
+                 await update.message.reply_text("⚠️ عذرًا، الرابط غير صالح أو مستخدم.")
 
     # عرض القائمة الرئيسية
     first_name = f"[{escape_markdown(user.first_name, version=2)}](tg://user?id={user.id})"

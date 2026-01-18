@@ -16,6 +16,13 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 # [جديد] مفتاح API لـ OpenRouter
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
+# --- New Variables for Phase 2 (Hybrid System) ---
+# Token for the secondary bot used for zero-bandwidth downloads
+VICTIM_BOT_TOKEN = os.getenv("VICTIM_BOT_TOKEN")
+
+# Secret key used for signing JWTs or encrypting tokens for mobile app
+API_SECRET_KEY = os.getenv("API_SECRET_KEY")
+
 
 # --- إعدادات القنوات ---
 # معرف القناة التي يتم فيها تخزين الملفات (للحفظ الآمن)
@@ -38,3 +45,10 @@ if not TELEGRAM_BOT_TOKEN or not DATABASE_URL:
 
 if REQUIRED_CHANNEL_ID == "PLEASE_UPDATE_ME" or REQUIRED_CHANNEL_LINK == "PLEASE_UPDATE_ME":
     print("Warning: REQUIRED_CHANNEL_ID and REQUIRED_CHANNEL_LINK are not set in config.py or .env file. The subscription feature will not work correctly.")
+
+# Warning for new Phase 2 keys (Non-blocking for now)
+if not VICTIM_BOT_TOKEN:
+    print("Warning: VICTIM_BOT_TOKEN is missing. 'Victim Bot' download strategy will not work.")
+
+if not API_SECRET_KEY:
+    print("Warning: API_SECRET_KEY is missing. Secure authentication with Mobile App may fail.")

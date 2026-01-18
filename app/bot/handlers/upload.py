@@ -131,3 +131,35 @@ async def save_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(f"✅ تم حفظ {count} عنصر بنجاح.", reply_markup=kb.back_button(f"container:{container_id}"))
         context.user_data.clear()
         return ConversationHandler.END
+
+async def start_upload_from_deeplink(update: Update, context: ContextTypes.DEFAULT_TYPE, folder_id: int) -> int:
+    """
+    [Phase 4] Starts the upload conversation directly from a deep link.
+    """
+    user_id = update.effective_user.id
+    
+    # Check existence
+    if not db_containers.container_exists(folder_id):
+        await update.message.reply_text("⚠️ This folder no longer exists.")
+        return ConversationHandler.END
+
+    # Check permission (Basic check)
+    # Ideally should check write permissions.
+    details = db_containers.get_container_details(folder_id)
+    if details['type'] == 'section':
+         await update.message.reply_text("⚠️ Cannot upload directly to a Section. Please choose a Folder.")
+         return ConversationHandler.END
+         
+    # Setup state
+    context.user_data['target_container_id'] = folder_id
+    context.user_data['previous_menu'] = f"container:{folder_id}"
+    
+    folder_name = escape_markdown(details['name'], version=2)
+    await update.message.reply_text(
+        f"📂 *Upload Mode: {folder_name}*\n\n"
+        f"You are now linked to this folder via the app\.\n"
+        f"Send files/messages to save them here\.\n"
+        f"Type /done to finish or /cancel to exit\.",
+        parse_mode='MarkdownV2'
+    )
+    return AWAITING_ITEMS_FOR_UPLOAD

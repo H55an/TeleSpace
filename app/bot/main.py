@@ -41,7 +41,10 @@ def main() -> None:
 
     # معالج محادثة إضافة العناصر إلى مجلد
     add_items_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(handlers.add_items_start, pattern="^add_items:")],
+        entry_points=[
+            CallbackQueryHandler(handlers.add_items_start, pattern="^add_items:"),
+            CommandHandler("start", handlers.start)
+        ],
         states={
             AWAITING_ITEMS_FOR_UPLOAD: [
                 CommandHandler("done", handlers.save_items),

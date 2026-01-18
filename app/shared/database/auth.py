@@ -255,3 +255,124 @@ def get_permission_level(user_id: int, content_type: str, content_id: int) -> st
     finally:
         if conn:
             conn.close()
+
+# --- Phase 3: API Auth Functions ---
+
+def create_auth_request(request_id: str):
+    """
+    Inserts a new auth request with 'pending' status.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return False
+
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO auth_requests (request_id, status) VALUES (%s, 'pending') ON CONFLICT (request_id) DO NOTHING",
+                (request_id,)
+            )
+            conn.commit()
+            return True
+    except psycopg2.Error as e:
+        print(f"DB Error in create_auth_request: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_auth_request_status(request_id: str):
+    """
+    Returns the status and access_token (if approved) for a given request_id.
+    Returns None if not found.
+    Result dict: {'status': str, 'access_token': str|None, 'user_id': int|None}
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return None
+
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(
+                "SELECT status, access_token, user_id FROM auth_requests WHERE request_id = %s",
+                (request_id,)
+            )
+            result = cursor.fetchone()
+            if result:
+                return dict(result)
+            return None
+    except psycopg2.Error as e:
+        print(f"DB Error in get_auth_request_status: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def approve_auth_request(request_id: str, user_id: int, user_name: str) -> str | None:
+    """
+    Approves a pending auth request, generates an access token, and returns it.
+    Returns None if request invalid or not found.
+    """
+    token = str(uuid.uuid4()) # Simple UUID token for now. In production use JWT.
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return None
+
+        with conn.cursor() as cursor:
+            # Update auth_requests
+            cursor.execute(
+                """
+                UPDATE auth_requests 
+                SET status = 'approved', user_id = %s, access_token = %s 
+                WHERE request_id = %s AND status = 'pending'
+                RETURNING request_id
+                """,
+                (user_id, token, request_id)
+            )
+            if cursor.fetchone():
+                # Also create a session
+                cursor.execute(
+                    """
+                    INSERT INTO app_sessions (user_id, access_token, device_info)
+                    VALUES (%s, %s, 'Telegram Login')
+                    ON CONFLICT (access_token) DO NOTHING
+                    """,
+                    (user_id, token)
+                )
+                conn.commit()
+                return token
+            return None # Not found or not pending
+    except psycopg2.Error as e:
+        print(f"DB Error in approve_auth_request: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def verify_access_token(token: str) -> int | None:
+    """
+    Checks if a token exists and is valid in app_sessions.
+    Returns user_id if valid, None otherwise.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return None
+
+        with conn.cursor() as cursor:
+            # Check app_sessions first for active sessions
+            cursor.execute(
+                "SELECT user_id FROM app_sessions WHERE access_token = %s AND is_active = TRUE",
+                (token,)
+            )
+            result = cursor.fetchone()
+            if result:
+                return result[0]
+            return None
+    except psycopg2.Error as e:
+        print(f"DB Error in verify_access_token: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
