@@ -23,6 +23,13 @@ VICTIM_BOT_TOKEN = os.getenv("VICTIM_BOT_TOKEN")
 # Secret key used for signing JWTs or encrypting tokens for mobile app
 API_SECRET_KEY = os.getenv("API_SECRET_KEY")
 
+# --- New Variables for Phase 2 (Hybrid System) ---
+# Local API URL for the bot to connect to
+LOCAL_API_URL = os.getenv("LOCAL_API_URL")
+
+# Local File URL for the bot to connect to
+LOCAL_FILE_URL = os.getenv("LOCAL_FILE_URL")
+
 
 # --- إعدادات القنوات ---
 # معرف القناة التي يتم فيها تخزين الملفات (للحفظ الآمن)

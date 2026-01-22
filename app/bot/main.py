@@ -18,7 +18,13 @@ def main() -> None:
     [معدل] نقطة انطلاق البوت مع المعالجات الموحدة.
     """
     # 1. إنشاء التطبيق
-    application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+    application = (
+        Application.builder()
+        .token(config.TELEGRAM_BOT_TOKEN)
+        .base_url(config.LOCAL_API_URL)      # توجيه الأوامر للسيرفر المحلي
+        .base_file_url(config.LOCAL_FILE_URL) # توجيه الملفات للسيرفر المحلي
+        .build()
+    )
 
     # 2. إعداد وتسجيل المعالجات (Handlers)
 
