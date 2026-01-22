@@ -107,6 +107,8 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
             
             if item_type == 'text': await context.bot.send_message(chat_id=chat_id, text=content, reply_markup=reply_markup)
             else: # Files
+                if content != None:
+                    content = content if len(content) <= 1024 else content[:1020] + " ..."                  
                 # Phase 2: Distributed Retrieval Logic
                 location = db_items.get_file_location(item['item_record_id'])
                 if location:
@@ -116,7 +118,7 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
                             chat_id=chat_id,
                             from_chat_id=location['channel_id'],
                             message_id=location['message_id'],
-                            # caption=content if content else None,
+                            caption=content if content else None,
                             reply_markup=reply_markup
                         )
                         # Ensure small delay even after copy
@@ -133,8 +135,6 @@ async def view_and_send_container_contents(update: Update, context: ContextTypes
                     'audio': context.bot.send_audio,
                     'voice': context.bot.send_voice,
                 }
-                if content != None:
-                    content = content if len(content) <= 1024 else content[:1020] + " ..."
                 kwargs = {'caption': content, 'reply_markup': reply_markup, item_type: file_id}
                 await send_map[item_type](chat_id=chat_id, **kwargs)
             

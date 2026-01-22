@@ -1,33 +1,32 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import sys
-import os
+from api.routers import auth, explorer, structure, items, share
 
-# Ensure the app root is in path for imports to work if run directly
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+description = """
+📘 TeleSpace Mirror API Documentation v1.0
+Status: Final Specification Target: Mobile App Backend (FastAPI)
 
-from api.routers import auth, explorer
-from app.shared import config
+📌 Overview & Standards
+This API replicates the Telegram Bot's logic strictly. It distinguishes between Sections (Organization) and Folders (Content Storage).
 
-app = FastAPI(title="TeleSpace API", version="1.0.0")
+Base URL: http://127.0.0.1:8000
+Authentication: Bearer Token via Header
+Authorization: Bearer <ACCESS_TOKEN>
+Date Format: ISO 8601 (YYYY-MM-DDTHH:MM:SS)
+"""
 
-# Setup CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all for development
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+app = FastAPI(
+    title="TeleSpace Mirror API",
+    version="1.0",
+    description=description,
 )
 
 # Include Routers
 app.include_router(auth.router)
 app.include_router(explorer.router)
+app.include_router(structure.router)
+app.include_router(items.router)
+app.include_router(share.router)
 
 @app.get("/")
-def root():
+def read_root():
     return {"message": "TeleSpace API is running"}
-
-if __name__ == "__main__":
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -169,3 +169,31 @@ def delete_all_items_in_container(container_id: int, user_id: int):
     finally:
         if conn:
             conn.close()
+
+def rename_item(item_record_id: int, new_name: str, user_id: int) -> dict | None:
+    """
+    Renames an item and logs the activity. Returns the updated item dict.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return None
+
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute(
+                "UPDATE items SET item_name = %s WHERE item_record_id = %s RETURNING item_record_id, item_name", 
+                (new_name, item_record_id)
+            )
+            updated_item = cursor.fetchone()
+            
+            if updated_item:
+                _log_activity(cursor, user_id, 'RENAME_ITEM', item_record_id, 'item', f"New Name: {new_name}")
+                conn.commit()
+                return dict(updated_item)
+            return None
+    except psycopg2.Error as e:
+        print(f"DB Error in rename_item: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()

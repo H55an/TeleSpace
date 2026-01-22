@@ -1,6 +1,7 @@
 from telegram import Update, Message
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.error import Forbidden
+from telegram.helpers import escape_markdown
 
 from app.shared import config
 from app.shared.database import containers as db_containers
@@ -43,7 +44,7 @@ async def process_message_for_saving(message: Message) -> dict | None:
                 'item_type': file_type,
                 'content': message.caption,
                 'file_unique_id': file_obj.file_unique_id,
-                'file_id': fwd_file_obj.file_id if fwd_file_obj else None, # Keep file_id as requested
+                'file_id': fwd_file_obj.file_id if fwd_file_obj else None,
                 'storage_message_id': fwd_msg.message_id,
                 'storage_channel_id': fwd_msg.chat.id
             }

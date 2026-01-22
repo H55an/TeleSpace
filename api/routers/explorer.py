@@ -1,82 +1,143 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from typing import List
 from api.dependencies import get_current_user
-from api.schemas import ContainerResponse, ItemResponse, ContainerContentResponse
+from api.schemas import (
+    RootContainersResponse, ContainerInfo, SectionContentResponse, 
+    FolderContentResponse, SectionInfo, FolderInfo, 
+    ItemInfo, Breadcrumb, Pagination
+)
 from app.shared.database import containers as db_containers
 from app.shared.database import items as db_items
-from app.shared.constants import PAGE_SIZE
+from app.shared.database import auth as db_auth
 
-router = APIRouter(prefix="/explorer", tags=["explorer"])
+router = APIRouter(prefix="/explorer", tags=["Explorer"])
 
-@router.get("/roots", response_model=List[ContainerResponse])
+@router.get("/roots", response_model=RootContainersResponse)
 def get_roots(user_id: int = Depends(get_current_user)):
     """
-    Returns the root containers (sections/folders) for the user.
+    Fetches top-level Sections and Folders.
     """
     roots = db_containers.get_root_containers(user_id)
-    # Convert psycopg2 Row/DictRow to Schema
-    return [
-        ContainerResponse(
+    
+    sections = []
+    folders = []
+    
+    for r in roots:
+        c_info = ContainerInfo(
             id=r['id'],
             name=r['name'],
             type=r['type'],
-            owner_user_id=r['owner_user_id']
-        ) for r in roots
-    ]
+            icon="briefcase" if r['type'] == 'section' else "folder",
+            created_at=str(r.get('creation_date', ''))
+        )
+        if r['type'] == 'section':
+            sections.append(c_info)
+        else:
+            folders.append(c_info)
+            
+    return RootContainersResponse(sections=sections, folders=folders)
 
-@router.get("/container/{container_id}", response_model=ContainerContentResponse)
-def get_container_content(
-    container_id: int, 
+@router.get("/section/{section_id}", response_model=SectionContentResponse)
+def view_section_content(section_id: int, user_id: int = Depends(get_current_user)):
+    """
+    Returns Sub-Sections and Folders inside a specific section.
+    """
+    if not db_containers.container_exists(section_id):
+        raise HTTPException(status_code=404, detail="Section not found")
+        
+    details = db_containers.get_container_details(section_id)
+    if details['type'] != 'section':
+         raise HTTPException(status_code=400, detail="Requested container is not a Section")
+
+    # Check Permissions
+    permission = db_auth.get_permission_level(user_id, 'section', section_id)
+    if not permission:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get Children
+    children = db_containers.get_child_containers(section_id)
+    sub_sections = []
+    folders = []
+    
+    for child in children:
+        c_info = ContainerInfo(
+            id=child['id'],
+            name=child['name'],
+            type=child['type'],
+            icon="briefcase" if child['type'] == 'section' else "folder",
+            # created_at missing in get_child_containers select, treating as None
+        )
+        if child['type'] == 'section':
+            sub_sections.append(c_info)
+        else:
+            folders.append(c_info)
+
+    # Breadcrumbs
+    path = db_containers.get_container_path(section_id)
+    breadcrumbs = [Breadcrumb(id=p[0], name=p[1]) for p in path]
+
+    return SectionContentResponse(
+        info=SectionInfo(
+            id=details['id'],
+            name=details['name'],
+            parent_id=details['parent_id'],
+            role=permission
+        ),
+        sub_sections=sub_sections,
+        folders=folders,
+        breadcrumbs=breadcrumbs
+    )
+
+@router.get("/folder/{folder_id}", response_model=FolderContentResponse)
+def view_folder_content(
+    folder_id: int, 
     page: int = Query(1, ge=1), 
+    limit: int = Query(50, le=100),
     user_id: int = Depends(get_current_user)
 ):
     """
-    Returns contents (sub-folders and items) of a specific container.
+    Returns items inside a specific folder.
     """
-    # 1. Check existence
-    if not db_containers.container_exists(container_id):
-        raise HTTPException(status_code=404, detail="Container not found")
-        
-    # 2. Check Permissions (Basic check: is owner or has permission?)
-    # Since shared logic handles permissions in queries usually, but get_child_containers doesn't filter by user permissions explicitly!
-    # Wait, get_child_containers takes parent_id.
-    # We should verify user has access to this container first.
-    # For now, we rely on the fact that if they have the ID they might see it (or we should add a permission check).
-    # The prompt says "Calls get_child_containers AND get_items_paginated".
-    # We will assume valid access for MVP or add a quick check.
-    # db_containers.get_container_details(container_id) -> check owner or permissions table.
-    # Adding a simple check:
-    # details = db_containers.get_container_details(container_id)
-    # if details['owner_user_id'] != user_id and not db_auth.has_direct_permission(user_id, details['type'], container_id):
-    #    raise HTTPException(403, "Access denied")
+    if not db_containers.container_exists(folder_id):
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    details = db_containers.get_container_details(folder_id)
+    if details['type'] != 'folder':
+         raise HTTPException(status_code=400, detail="Requested container is not a Folder")
+
+    # Check Permissions
+    permission = db_auth.get_permission_level(user_id, 'folder', folder_id)
+    if not permission:
+        raise HTTPException(status_code=403, detail="Access denied")
     
-    # 3. Get Sub-folders
-    folders_data = db_containers.get_child_containers(container_id)
-    folders = [
-        ContainerResponse(
-            id=f['id'],
-            name=f['name'],
-            type=f['type'],
-            owner_user_id=f['owner_user_id']
-        ) for f in folders_data
-    ]
+    # Calculate offset
+    offset = (page - 1) * limit
     
-    # 4. Get Items
-    items_data, total_items = db_items.get_items_paginated(container_id, page, PAGE_SIZE)
-    items = [
-        ItemResponse(
+    # Get Items
+    items_data, total_items = db_items.get_items_paginated(folder_id, limit, offset)
+    
+    items = []
+    for i in items_data:
+        items.append(ItemInfo(
             id=i['item_record_id'],
-            name=i['item_name'],
             type=i['item_type'],
-            file_id=i['file_id']
-        ) for i in items_data
-    ]
-    
-    return ContainerContentResponse(
-        container_id=container_id,
-        folders=folders,
+            name=i['item_name'],
+            size=None, # Not stored in DB
+            timestamp=str(i.get('upload_date', '')), # Assuming select fetches it, wait get_items_paginated SELECT doesn't fetch upload_date in previous view...
+            content=i['content']
+        ))
+        
+    return FolderContentResponse(
+        info=FolderInfo(
+            id=details['id'],
+            name=details['name'],
+            parent_id=details['parent_id'],
+            role=permission
+        ),
         items=items,
-        total_items=total_items,
-        page=page,
-        page_size=PAGE_SIZE
+        pagination=Pagination(
+            current_page=page,
+            total_pages=(total_items + limit - 1) // limit,
+            total_items=total_items
+        )
     )

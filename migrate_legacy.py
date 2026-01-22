@@ -6,13 +6,13 @@ import random  # مكتبة للعشوائية
 from telegram import Bot
 from telegram.error import RetryAfter, BadRequest, TimedOut, NetworkError
 import psycopg2
-import config  # ملف الإعدادات
+from app.shared import config  # ملف الإعدادات
 
 # --- إعدادات الأمان ---
 BATCH_SIZE = 10              # قللنا العدد قليلاً ليكون أخف
 MIN_DELAY_MSG = 2            # أقل وقت انتظار بين الرسائل (ثواني)
 MAX_DELAY_MSG = 6            # أقصى وقت انتظار بين الرسائل (ثواني)
-MIN_DELAY_BATCH = 30         # أقل وقت استراحة بين الدفعات (ثواني)
+MIN_DELAY_BATCH = 40         # أقل وقت استراحة بين الدفعات (ثواني)
 MAX_DELAY_BATCH = 90         # أقصى وقت استراحة بين الدفعات (ثواني)
 
 TARGET_CHANNEL_ID = config.STORAGE_CHANNEL_ID
@@ -62,14 +62,14 @@ async def migrate_legacy_files():
                 # إرسال الملف (مع محاولة التعرف على النوع)
                 # استخدام send_document كحل عام لأغلب الأنواع إذا لم يكن محدداً بدقة
                 if item_type == 'photo':
-                     sent_message = await bot.send_photo(chat_id=TARGET_CHANNEL_ID, photo=legacy_file_id, disable_notification=True)
+                    sent_message = await bot.send_photo(chat_id=TARGET_CHANNEL_ID, photo=legacy_file_id, disable_notification=True)
                 elif item_type == 'video':
                     sent_message = await bot.send_video(chat_id=TARGET_CHANNEL_ID, video=legacy_file_id, disable_notification=True)
                 elif item_type == 'audio':
                     sent_message = await bot.send_audio(chat_id=TARGET_CHANNEL_ID, audio=legacy_file_id, disable_notification=True)
                 elif item_type == 'voice':
                     sent_message = await bot.send_voice(chat_id=TARGET_CHANNEL_ID, voice=legacy_file_id, disable_notification=True)
-                else: 
+                else:
                     sent_message = await bot.send_document(chat_id=TARGET_CHANNEL_ID, document=legacy_file_id, disable_notification=True)
 
                 # الحفظ في قاعدة البيانات

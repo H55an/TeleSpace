@@ -47,3 +47,22 @@ def update_user_last_active(user_id: int):
     finally:
         if conn:
             conn.close()
+
+def get_user(user_id: int):
+    """
+    Retrieves user details.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn: return None
+        
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+            return cursor.fetchone()
+    except psycopg2.Error as e:
+        print(f"DB Error in get_user: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
