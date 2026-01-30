@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from typing import List
 from api.dependencies import get_current_user
 from api.schemas import (
@@ -91,6 +91,7 @@ def view_section_content(section_id: int, user_id: int = Depends(get_current_use
 @router.get("/folder/{folder_id}", response_model=FolderContentResponse)
 def view_folder_content(
     folder_id: int, 
+    request: Request,
     page: int = Query(1, ge=1), 
     limit: int = Query(50, le=100),
     user_id: int = Depends(get_current_user)
@@ -117,14 +118,32 @@ def view_folder_content(
     items_data, total_items = db_items.get_items_paginated(folder_id, limit, offset)
     
     items = []
+    base_url = str(request.base_url).rstrip("/")
+    
     for i in items_data:
+        # Construct Thumbnail URL if video or photo
+        thumb_url = None
+        # We use a placeholder logic here. In reality, we'd need file_unique_id.
+        # Assuming 'content' field holds file_id for non-text items.
+        # We'll use file_id as a proxy for unique_id for now, or just a generic link.
+        if i['item_type'] in ['video', 'photo']:
+            # We use the item ID or content (file_id) to map to a thumbnail
+            # The URL pattern: /static/thumbnails/{file_unique_id}.jpg
+            # Since we don't have unique_id explicitly separate, we might use file_id or a hash.
+            # For demonstration purposes, we assume file_id is usable or mapped.
+             if i.get('content'):
+                 # Extract a semblance of unique id or just use file_id
+                 thumb_url = f"{base_url}/static/thumbnails/{i['content']}.jpg"
+
         items.append(ItemInfo(
             id=i['item_record_id'],
             type=i['item_type'],
             name=i['item_name'],
-            size=None, # Not stored in DB
-            timestamp=str(i.get('upload_date', '')), # Assuming select fetches it, wait get_items_paginated SELECT doesn't fetch upload_date in previous view...
-            content=i['content']
+            size=None, # Not stored in DB currently
+            mime_type=None, # Not stored in DB currently
+            thumbnail_url=thumb_url,
+            timestamp=str(i.get('upload_date', '')), 
+            content=i['content'] if i['item_type'] == 'text' else None
         ))
         
     return FolderContentResponse(

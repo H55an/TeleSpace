@@ -28,6 +28,10 @@ def main() -> None:
 
     # 2. إعداد وتسجيل المعالجات (Handlers)
 
+    # [جديد] Middleware لتحديث بيانات المستخدم (يعمل مع كل تحديث)
+    from telegram.ext import TypeHandler
+    application.add_handler(TypeHandler(Update, handlers.check_user_updates), group=-1)
+
     # معالج محادثة موحد لإنشاء الحاويات (أقسام ومجلدات)
     create_container_conv = ConversationHandler(
         entry_points=[

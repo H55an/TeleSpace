@@ -10,8 +10,16 @@ from app.shared.database import users as db_users
 from app.shared.constants import AWAITING_ITEMS_FOR_UPLOAD
 from app.bot import keyboards as kb
 
-async def process_message_for_saving(message: Message) -> dict | None:
-    """[معدل ومصحح] يعالج الرسائل لتحويلها إلى بيانات قابلة للحفظ بطريقة آمنة."""
+import os
+import uuid # For unique filenames if needed, though file_unique_id is better
+
+async def process_message_for_saving(message: Message, context: ContextTypes.DEFAULT_TYPE) -> dict | None:
+    """
+    [معدل] يعالج الرسائل:
+    1. يرسلها لقناة التخزين.
+    2. يستخرج الميتاداتا من رسالة القناة.
+    3. يحمل الصورة المصغرة محلياً.
+    """
     file_type, file_obj = None, None
     if message.document: (file_type, file_obj) = ('document', message.document)
     elif message.video: (file_type, file_obj) = ('video', message.video)
@@ -24,33 +32,77 @@ async def process_message_for_saving(message: Message) -> dict | None:
             fwd_msg = await message.forward(chat_id=config.STORAGE_CHANNEL_ID)
         except Forbidden:
             print(f"Error: Bot is not an admin in the storage channel {config.STORAGE_CHANNEL_ID} or cannot forward messages.")
-            # If we assume we must have a storage location, we should return None or raise Error.
-            # But the user prompt says "Return a dictionary containing... storage_message_id... Set file_id to None...".
-            # If forwarding fails, we probably shouldn't save the item as we can't store the location.
             return None
         
         fwd_file_obj = None
         if fwd_msg:
-            # Extract file ID from the forwarded message (as requested by user "keep it")
+            # Extract file object from the forwarded message (Source of Truth)
             if file_type == 'document' and fwd_msg.document: fwd_file_obj = fwd_msg.document
             elif file_type == 'video' and fwd_msg.video: fwd_file_obj = fwd_msg.video
-            elif file_type == 'photo' and fwd_msg.photo: fwd_file_obj = fwd_msg.photo[-1]
+            elif file_type == 'photo' and fwd_msg.photo: fwd_file_obj = fwd_msg.photo[-1] # Highest quality
             elif file_type == 'audio' and fwd_msg.audio: fwd_file_obj = fwd_msg.audio
             elif file_type == 'voice' and fwd_msg.voice: fwd_file_obj = fwd_msg.voice
 
-        if fwd_msg: # We just need the message_id and chat_id primarily, but file_id is also good.
+        if fwd_msg and fwd_file_obj:
+            # --- Metadata Extraction ---
+            meta = {
+                'file_name': getattr(fwd_file_obj, 'file_name', f'{file_type}_{fwd_file_obj.file_unique_id}'),
+                'mime_type': getattr(fwd_file_obj, 'mime_type', None),
+                'file_size': getattr(fwd_file_obj, 'file_size', 0),
+                'width': getattr(fwd_file_obj, 'width', None),
+                'height': getattr(fwd_file_obj, 'height', None),
+                'duration': getattr(fwd_file_obj, 'duration', None),
+                'thumbnail_path': None
+            }
+
+            # --- Thumbnail Processing ---
+            # --- Thumbnail Processing ---
+            # Try to find a thumbnail
+            thumb = None
+            if file_type == 'photo' and fwd_msg.photo:
+                 # Use the smallest photo as thumbnail
+                 thumb = fwd_msg.photo[0]
+            else:
+                 thumb = getattr(fwd_file_obj, 'thumbnail', None) or getattr(fwd_file_obj, 'thumb', None)
+            
+            # For photos, the photo itself is the content, so we might generate a thumb? 
+            # Telegram usually provides 'thumb' for documents/videos. 
+            # For 'photo' type, fwd_file_obj IS the photo size. We can pick a smaller size as thumb if we want, 
+            # but usually for 'photo' items we might want to just display the photo itself.
+            # However, for consistency, let's see if we can get a thumb.
+            # If it's a photo, we can download the 's' size as thumb if available in the list?
+            # But here fwd_file_obj is a PhotoSize object.
+            
+            if thumb:
+                try:
+                    save_dir = os.path.join(os.getcwd(), 'static', 'thumbnails')
+                    os.makedirs(save_dir, exist_ok=True)
+                    
+                    filename = f"{fwd_file_obj.file_unique_id}.jpg"
+                    save_path = os.path.join(save_dir, filename)
+                    
+                    # Check if exists locally
+                    if not os.path.exists(save_path):
+                        thumb_file = await context.bot.get_file(thumb.file_id)
+                        await thumb_file.download_to_drive(save_path)
+                    
+                    meta['thumbnail_path'] = f"static/thumbnails/{filename}"
+                except Exception as e:
+                    print(f"Error downloading thumbnail: {e}")
+
             collected_data = {
-                'item_name': getattr(file_obj, 'file_name', f'ملف_{file_type}'),
+                'item_name': meta['file_name'],
                 'item_type': file_type,
-                'content': message.caption,
-                'file_unique_id': file_obj.file_unique_id,
-                'file_id': fwd_file_obj.file_id if fwd_file_obj else None,
+                'content': message.caption, # Caption from original message
+                'file_unique_id': fwd_file_obj.file_unique_id,
+                'file_id': fwd_file_obj.file_id,
                 'storage_message_id': fwd_msg.message_id,
-                'storage_channel_id': fwd_msg.chat.id
+                'storage_channel_id': fwd_msg.chat.id,
+                **meta # Unpack metadata
             }
             return collected_data
         else:
-            print(f"Could not forward message of type {file_type}")
+            print(f"Could not forward message or extract file of type {file_type}")
             return None
 
     elif message.text:
@@ -60,8 +112,11 @@ async def process_message_for_saving(message: Message) -> dict | None:
             'content': message.text,
             'file_unique_id': None,
             'file_id': None,
-            'storage_message_id': None, # Text messages are not forwarded to storage channel in this logic
-            'storage_channel_id': None
+            'storage_message_id': None,
+            'storage_channel_id': None,
+            # Empty metadata for text
+            'file_name': None, 'mime_type': 'text/plain', 'file_size': 0, 
+            'width': None, 'height': None, 'duration': None, 'thumbnail_path': None
         }
         
     return None
@@ -69,6 +124,9 @@ async def process_message_for_saving(message: Message) -> dict | None:
 async def add_items_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
+    
+    # NOTE: User update is now handled by Middleware, so we don't strictly need to call update_user_last_active here manually,
+    # but it doesn't hurt.
     db_users.update_user_last_active(update.effective_user.id)
     
     container_id = int(query.data.split(':')[1])
@@ -106,7 +164,8 @@ async def save_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(f"📥 جاري حفظ {len(message_buffer)} عنصر...")
         count = 0
         for msg in message_buffer:
-            item_info = await process_message_for_saving(msg)
+            # Pass context for file downloading
+            item_info = await process_message_for_saving(msg, context)
             if item_info:
                 # Step A: Add item metadata
                 item_id = db_items.add_item(
@@ -116,7 +175,15 @@ async def save_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                     item_type=item_info['item_type'],
                     content=item_info['content'],
                     file_unique_id=item_info['file_unique_id'],
-                    file_id=item_info['file_id']
+                    file_id=item_info['file_id'],
+                    # New Metadata Fields
+                    file_name=item_info.get('file_name'),
+                    mime_type=item_info.get('mime_type'),
+                    file_size=item_info.get('file_size'),
+                    width=item_info.get('width'),
+                    height=item_info.get('height'),
+                    duration=item_info.get('duration'),
+                    thumbnail_path=item_info.get('thumbnail_path')
                 )
 
                 if item_id:

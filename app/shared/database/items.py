@@ -44,9 +44,11 @@ def get_file_location(item_id: int):
             conn.close()
 
 # --- Item Functions ---
-def add_item(container_id: int, user_id: int, item_name: str, item_type: str, content: str, file_unique_id: str = None, file_id: str = None) -> int | None:
+def add_item(container_id: int, user_id: int, item_name: str, item_type: str, content: str, file_unique_id: str = None, file_id: str = None,
+             file_name: str = None, mime_type: str = None, file_size: int = None, width: int = None, height: int = None, duration: int = None, thumbnail_path: str = None) -> int | None:
     """
     Adds an item to a container, logs the activity, and returns the new item's ID.
+    Includes extended metadata for files.
     """
     conn = None
     try:
@@ -55,8 +57,16 @@ def add_item(container_id: int, user_id: int, item_name: str, item_type: str, co
 
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO items (container_id, item_name, item_type, content, file_unique_id, file_id, upload_date) VALUES (%s, %s, %s, %s, %s, %s, NOW()) RETURNING item_record_id",
-                (container_id, item_name, item_type, content, file_unique_id, file_id)
+                """
+                INSERT INTO items (
+                    container_id, item_name, item_type, content, file_unique_id, file_id, 
+                    file_name, mime_type, file_size, width, height, duration, thumbnail_path,
+                    upload_date
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()) 
+                RETURNING item_record_id
+                """,
+                (container_id, item_name, item_type, content, file_unique_id, file_id,
+                 file_name, mime_type, file_size, width, height, duration, thumbnail_path)
             )
             item_id = cursor.fetchone()[0]
             _log_activity(cursor, user_id, 'ADD_ITEM', item_id, 'item', f"Name: {item_name} in container {container_id}")

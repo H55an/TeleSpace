@@ -34,9 +34,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             request_id = arg.split('_')[1]
             token = db_auth.approve_auth_request(request_id, user.id, user.first_name)
             if token:
-                await update.message.reply_text("✅ You have successfully logged into the TeleSpace App.")
+                await update.message.reply_text("✅ لقد قمت بتسجيل الدخول بنجاح إلى تطبيق TeleSpace.\n\nيمكنك الآن تصفح المحتوى من خلال التطبيق.")
             else:
-                await update.message.reply_text("⚠️ Login request not found or expired.")
+                await update.message.reply_text("⚠️ عذرًا، رابط تسجيل الدخول غير صالح أو منتهي الصلاحية.")
             return ConversationHandler.END
 
         # 2. Upload Redirect

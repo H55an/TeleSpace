@@ -54,7 +54,9 @@ class ItemInfo(BaseModel):
     id: int
     type: str # 'document', 'photo', 'video', 'voice', 'text', 'audio'
     name: Optional[str] = None
-    size: Optional[str] = None
+    size: Optional[int] = None # Size in bytes
+    mime_type: Optional[str] = None
+    thumbnail_url: Optional[str] = None
     timestamp: Optional[str] = None
     content: Optional[str] = None
 
@@ -90,20 +92,19 @@ class DeleteResponse(BaseModel):
     message: str
 
 # --- Item Management Schemas ---
-class UploadRequestRequest(BaseModel):
-    target_folder_id: int
+# Removed UploadRequestRequest/Response (Reverse Upload)
 
-class UploadRequestResponse(BaseModel):
-    deep_link: str
-    instructions: str
+class UploadResponse(BaseModel):
+    status: str
+    item_id: int
+    name: str
+    size: int
 
 class TextItemRequest(BaseModel):
     folder_id: int
     content: str
 
-class DownloadLinkResponse(BaseModel):
-    direct_url: str
-    expires_in: int
+# Download link is now a Stream response, no schema needed for request/response body (it's binary)
 
 class BulkDeleteRequest(BaseModel):
     item_ids: List[int]

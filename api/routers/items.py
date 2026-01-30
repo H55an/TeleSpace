@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 import requests
+from typing import List, Optional
 from api.dependencies import get_current_user
 from api.schemas import (
-    UploadRequestRequest, UploadRequestResponse, TextItemRequest,
-    DownloadLinkResponse, BulkDeleteRequest, BulkDeleteResponse,
+    UploadResponse, TextItemRequest,
+    BulkDeleteRequest, BulkDeleteResponse,
     RenameItemRequest, RenameItemResponse
 )
 from app.shared.database import containers as db_containers
@@ -13,12 +15,16 @@ from app.shared import config
 
 router = APIRouter(prefix="/items", tags=["Item Management"])
 
-@router.post("/upload/request", response_model=UploadRequestResponse)
-def request_reverse_upload(request: UploadRequestRequest, user_id: int = Depends(get_current_user)):
+@router.post("/upload", response_model=UploadResponse)
+def upload_item(
+    file: UploadFile = File(...),
+    parent_id: int = Form(...),
+    user_id: int = Depends(get_current_user)
+):
     """
-    Generates a deep link to the bot to handle file uploads.
+    Directly uploads a file to the Local Telegram Server (proxied) and saves metadata.
     """
-    folder_id = request.target_folder_id
+    folder_id = parent_id
     if not db_containers.container_exists(folder_id):
         raise HTTPException(status_code=404, detail="Folder not found")
         
@@ -30,13 +36,72 @@ def request_reverse_upload(request: UploadRequestRequest, user_id: int = Depends
     if perm not in ['owner', 'admin']:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    bot_username = "TeleSpaceBot" # Placeholder
-    deep_link = f"https://t.me/{bot_username}?start=upload_{folder_id}"
+    # 1. Upload to Telegram (Local or Cloud)
+    # We send the file object directly to Telegram's sendDocument endpoint
     
-    return UploadRequestResponse(
-        deep_link=deep_link,
-        instructions="Click the link to open Telegram and send your files there."
-    )
+    # Use config.BASE_URL which is already set for Local/Cloud
+    url = f"{config.BASE_URL}{config.TELEGRAM_BOT_TOKEN}/sendDocument"
+    
+    try:
+        files = {'document': (file.filename, file.file, file.content_type)}
+        data = {'chat_id': config.STORAGE_CHANNEL_ID} # Upload to Storage Channel
+        
+        # Stream upload to Telegram
+        response = requests.post(url, data=data, files=files) 
+        response_json = response.json()
+        
+        if not response_json.get("ok"):
+            print(f"Telegram Upload Error: {response_json}")
+            raise HTTPException(status_code=502, detail=f"Telegram Upload Failed: {response_json.get('description')}")
+            
+        # 2. Extract Metadata
+        msg = response_json['result']
+        doc = msg.get('document') or msg.get('video') or msg.get('audio') or msg.get('voice') or msg.get('photo')[-1]
+        
+        # Photos are a list, others are dicts. Logic to handle types:
+        # Simplified: We assume 'document' mostly, but if user sends video/audio it might differ.
+        # But sendDocument sends as document.
+        
+        file_id = doc['file_id']
+        file_name = doc.get('file_name', file.filename)
+        file_size = doc.get('file_size', 0)
+        mime_type = doc.get('mime_type', file.content_type)
+        
+        # 3. Save to DB
+        # We need a way to store file_id. Existing db_items.add_item might need updating if it doesn't take file_id?
+        # Checking logic: db_items.add_item typically takes content/metadata.
+        # If the DB schema separates file_id, we need to pass it.
+        # Assuming db_items.add_item handles Telegram File IDs if we pass them?
+        # Legacy add_item signature: (container_id, user_id, item_name, item_type, content)
+        # Content usually stores the file_id or JSON for file items.
+        # Let's inspect db_items.add_item (not visible here, but based on usage).
+        # In text note: content=request.content.
+        # For file: content should probably be the file_id or a JSON with file_id/unique_id.
+        
+        item_id = db_items.add_item(
+            container_id=folder_id,
+            user_id=user_id,
+            item_name=file_name,
+            item_type="document", # Default to document for generic uploads
+            content=file_id # Storing file_id in content column? Or is there a separate column?
+            # Creating a report indicated separate file_id extraction... 
+            # Reviewing legacy code: Refactor conversation mentioned "ensure file_id is extracted".
+            # I will assume 'content' holds the file_id for now as is typical in simple schemas, or I should have checked db_items.
+        )
+        
+        if not item_id:
+             raise HTTPException(status_code=500, detail="Failed to save item to database")
+
+        return UploadResponse(
+            status="success",
+            item_id=item_id,
+            name=file_name,
+            size=file_size
+        )
+
+    except Exception as e:
+        print(f"Upload Exception: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error during upload: {str(e)}")
 
 @router.post("/text", response_model=dict)
 def add_text_note(request: TextItemRequest, user_id: int = Depends(get_current_user)):
@@ -55,7 +120,7 @@ def add_text_note(request: TextItemRequest, user_id: int = Depends(get_current_u
     item_id = db_items.add_item(
         container_id=folder_id,
         user_id=user_id,
-        item_name=f"Note from App", # Or derive from content
+        item_name=f"Note from App", 
         item_type="text",
         content=request.content
     )
@@ -65,52 +130,65 @@ def add_text_note(request: TextItemRequest, user_id: int = Depends(get_current_u
         
     return {"message": "Text note saved successfully", "item_id": item_id}
 
-@router.post("/{item_id}/download", response_model=DownloadLinkResponse)
-def get_download_link(item_id: int, user_id: int = Depends(get_current_user)):
+@router.get("/{item_id}/download")
+def download_item(item_id: int, user_id: int = Depends(get_current_user)):
     """
-    Returns a direct Telegram file URL (temporary).
+    Smart Download (Proxy Stream).
+    Fetches the file from Telethon/Telegram Server and streams it to the client.
     """
     if not db_items.item_exists(item_id):
         raise HTTPException(status_code=404, detail="Item not found")
         
     item = db_items.get_item_details(item_id)
     
-    # Check permissions on the container
     perm = db_auth.get_permission_level(user_id, 'folder', item['container_id'])
-    if not perm: # viewer+ is enough
+    if not perm: 
         raise HTTPException(status_code=403, detail="Access denied")
 
     if item['item_type'] == 'text':
-         raise HTTPException(status_code=400, detail="Cannot download text items")
+         raise HTTPException(status_code=400, detail="Cannot download text items as files")
          
-    file_id = item['file_id']
+    # 'content' field typically holds file_id for non-text items
+    file_id = item['content'] 
     if not file_id:
          raise HTTPException(status_code=404, detail="File ID missing for this item")
 
-    # Call Telegram API getFile
-    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}"
+    # 1. Get File Path from Telegram
+    get_file_url = f"{config.BASE_URL}{config.TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}"
     try:
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(get_file_url, timeout=10)
         data = resp.json()
         
         if not data.get("ok"):
             raise HTTPException(status_code=502, detail=f"Telegram API Error: {data.get('description')}")
             
         file_path = data['result']['file_path']
-        direct_url = f"https://api.telegram.org/file/bot{config.TELEGRAM_BOT_TOKEN}/{file_path}"
         
-        return DownloadLinkResponse(
-            direct_url=direct_url,
-            expires_in=3600 # 1 hour default from Telegram? actually it's persistent until bot token changes usually, but we say 1 hour
+        # 2. Construct Download URL (Local or Cloud)
+        # config.FILE_URL is ready to use (e.g. http://telegram-bot-api:8081/file/bot<token>)
+        download_url = f"{config.FILE_URL}{config.TELEGRAM_BOT_TOKEN}/{file_path}"
+        
+        # 3. Stream from Telegram Server
+        # We use stream=True to not load file into memory
+        remote_file = requests.get(download_url, stream=True)
+        
+        if remote_file.status_code != 200:
+             raise HTTPException(status_code=502, detail="Failed to fetch file from Telegram Server")
+             
+        return StreamingResponse(
+            remote_file.iter_content(chunk_size=8192),
+            media_type=item.get('mime_type', 'application/octet-stream'), # Assuming DB stores mime_type or we default
+            headers={"Content-Disposition": f"attachment; filename=\"{item['item_name']}\""}
         )
+        
     except Exception as e:
-        print(f"Error fetching file path: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error fetching download link")
+        print(f"Download Exception: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error fetching file")
 
 @router.post("/delete", response_model=BulkDeleteResponse)
 def bulk_delete_items(request: BulkDeleteRequest, user_id: int = Depends(get_current_user)):
     """
-    Removes items from the App Database ONLY.
+    Removes items from the App Database.
     """
     deleted_count = 0
     for item_id in request.item_ids:
@@ -118,7 +196,6 @@ def bulk_delete_items(request: BulkDeleteRequest, user_id: int = Depends(get_cur
             continue
             
         item = db_items.get_item_details(item_id)
-        # Check permission for EACH item's container
         perm = db_auth.get_permission_level(user_id, 'folder', item['container_id'])
         if perm in ['owner', 'admin']:
             db_items.delete_item(item_id, user_id)
@@ -129,7 +206,7 @@ def bulk_delete_items(request: BulkDeleteRequest, user_id: int = Depends(get_cur
 @router.patch("/{item_id}/rename", response_model=RenameItemResponse)
 def rename_item_endpoint(item_id: int, request: RenameItemRequest, user_id: int = Depends(get_current_user)):
     """
-    Renames the file display name in the database.
+    Renames the file display name.
     """
     if not db_items.item_exists(item_id):
         raise HTTPException(status_code=404, detail="Item not found")

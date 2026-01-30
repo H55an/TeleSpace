@@ -21,7 +21,7 @@ def initiate_login(request: LoginInitiateRequest):
     # Needs to match the actual bot username. 
     # For now we use the one known or generic, assuming user configures it correctly.
     # In a real scenario, this should be in config.
-    bot_username = "TeleSpaceBot" # Placeholder, ideally from config
+    bot_username = "TeleSpace_0Bot" # Placeholder, ideally from config
     deep_link = f"https://t.me/{bot_username}?start=login_{request_id}"
     
     return LoginInitiateResponse(

@@ -1,61 +1,90 @@
 import os
+import sys
 from dotenv import load_dotenv
 
-# يقوم بتحميل المتغيرات من ملف .env (هذا للتشغيل المحلي فقط)
+# تحميل ملف .env للمتغيرات (للتشغيل المحلي)
 load_dotenv()
 
-# --- المتغيرات الأساسية ---
-# جلب توكن البوت من متغيرات البيئة
+# =========================================================
+# 1. إعدادات المسارات (Project Paths)
+# =========================================================
+# تحديد المجلد الرئيسي (داخل الدوكر سيكون /app)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+PROFILES_DIR = os.path.join(STATIC_DIR, "profiles")
+THUMBNAILS_DIR = os.path.join(STATIC_DIR, "thumbnails")
+
+# =========================================================
+# 2. المتغيرات الأساسية (كما كانت في الكود القديم)
+# =========================================================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DEVELOPER_NAME = "Hassan AL-Naqeeb"
 DEVELOPER_ID = 5372240626
-
-# جلب رابط قاعدة البيانات من متغيرات البيئة
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# [جديد] مفتاح API لـ OpenRouter
+# إعدادات القنوات
+STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID", "-1003046683134"))
+REQUIRED_CHANNEL_ID = int(os.getenv("REQUIRED_CHANNEL_ID", "-1003093025900"))
+REQUIRED_CHANNEL_LINK = os.getenv("REQUIRED_CHANNEL_LINK", "https://t.me/TeleSpace_0")
+
+# متغيرات الذكاء الاصطناعي والمفاتيح
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-# --- New Variables for Phase 2 (Hybrid System) ---
-# Token for the secondary bot used for zero-bandwidth downloads
 VICTIM_BOT_TOKEN = os.getenv("VICTIM_BOT_TOKEN")
-
-# Secret key used for signing JWTs or encrypting tokens for mobile app
 API_SECRET_KEY = os.getenv("API_SECRET_KEY")
 
-# --- New Variables for Phase 2 (Hybrid System) ---
-# Local API URL for the bot to connect to
-LOCAL_API_URL = os.getenv("LOCAL_API_URL")
+# =========================================================
+# 3. المنطق الذكي للسيرفر المحلي (The Smart Logic)
+# =========================================================
+# جلب بيانات الاعتماد الخاصة بـ MTProto (مطلوبة للسيرفر المحلي)
+API_ID = os.getenv("TELEGRAM_API_ID")
+API_HASH = os.getenv("TELEGRAM_API_HASH")
 
-# Local File URL for the bot to connect to
-LOCAL_FILE_URL = os.getenv("LOCAL_FILE_URL")
+# التحقق هل نعمل في وضع السيرفر المحلي؟
+# القيمة تأتي من Docker Environment
+USE_LOCAL_SERVER = os.getenv("TELEGRAM_LOCAL", "0") == "1"
 
+# رابط السيرفر (داخل الدوكر يكون http://telegram-bot-api:8081)
+API_SERVER_URL = os.getenv("API_SERVER_URL", "http://telegram-bot-api:8081")
 
-# --- إعدادات القنوات ---
-# معرف القناة التي يتم فيها تخزين الملفات (للحفظ الآمن)
-STORAGE_CHANNEL_ID = -1003046683134
+# هنا يكمن السحر: تحديد الروابط تلقائياً
+if USE_LOCAL_SERVER:
+    # ------------------ Local Mode ------------------
+    # هذه المتغيرات ستحل محل os.getenv القديم لديك
+    LOCAL_API_URL = f"{API_SERVER_URL}/bot"
+    LOCAL_FILE_URL = f"{API_SERVER_URL}/file/bot"
+    
+    # نستخدم هذه المتغيرات في ApplicationBuilder
+    BASE_URL = LOCAL_API_URL
+    FILE_URL = LOCAL_FILE_URL
+    
+    # المسار الثابت للملفات داخل الحاوية
+    TELEGRAM_FILES_ROOT = "/var/lib/telegram-bot-api"
+    print(f"🚀 Config: Running in LOCAL SERVER mode connecting to {API_SERVER_URL}")
 
-# [مطلوب] إعدادات بوابة التحقق (يجب تعديلها)
-# ضع هنا معرف القناة الرقمي الذي يجب على المستخدمين الاشتراك بها
-# مثال: -1001234567890
-REQUIRED_CHANNEL_ID = -1003093025900
+else:
+    # ------------------ Cloud Mode ------------------
+    # القيم الافتراضية لسيرفرات تيليجرام الرسمية
+    BASE_URL = "https://api.telegram.org/bot"
+    FILE_URL = "https://api.telegram.org/file/bot"
+    
+    # لضمان عدم حدوث خطأ إذا استخدمت المتغيرات القديمة
+    LOCAL_API_URL = BASE_URL
+    LOCAL_FILE_URL = FILE_URL
+    
+    TELEGRAM_FILES_ROOT = None
+    print("☁️ Config: Running in CLOUD mode (Standard Telegram API)")
 
-# ضع هنا رابط الدعوة الخاص بقناتك
-# مثال: "https://t.me/your_channel_name"
-REQUIRED_CHANNEL_LINK = "https://t.me/TeleSpace_0"
-
-
-# --- التحقق من المتغيرات ---
-# تأكد من أن المتغيرات الأساسية موجودة
+# =========================================================
+# 4. التحقق من الصحة (Validation)
+# =========================================================
+# هذا الكود يعمل تلقائياً عند استيراد الملف
 if not TELEGRAM_BOT_TOKEN or not DATABASE_URL:
-    raise ValueError("Missing critical environment variables: TELEGRAM_BOT_TOKEN or DATABASE_URL")
-
-if REQUIRED_CHANNEL_ID == "PLEASE_UPDATE_ME" or REQUIRED_CHANNEL_LINK == "PLEASE_UPDATE_ME":
-    print("Warning: REQUIRED_CHANNEL_ID and REQUIRED_CHANNEL_LINK are not set in config.py or .env file. The subscription feature will not work correctly.")
-
-# Warning for new Phase 2 keys (Non-blocking for now)
-if not VICTIM_BOT_TOKEN:
-    print("Warning: VICTIM_BOT_TOKEN is missing. 'Victim Bot' download strategy will not work.")
+    # نستخدم sys.exit لإيقاف البرنامج فوراً إذا كانت الإعدادات ناقصة
+    print("🔴 CRITICAL ERROR: Missing TELEGRAM_BOT_TOKEN or DATABASE_URL.")
+    sys.exit(1)
 
 if not API_SECRET_KEY:
-    print("Warning: API_SECRET_KEY is missing. Secure authentication with Mobile App may fail.")
+    print("⚠️ Warning: API_SECRET_KEY is missing. Mobile app authentication might fail.")
+
+if USE_LOCAL_SERVER and not (API_ID and API_HASH):
+     print("⚠️ Warning: Running in Local Mode but API_ID/API_HASH are missing in .env!")
