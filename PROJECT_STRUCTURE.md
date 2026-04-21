@@ -47,12 +47,8 @@ TeleSpace/
 │   ├── profiles/                   # صور الملفات الشخصية للمستخدمين
 │   └── thumbnails/                 # الصور المصغرة (Thumbnails) للملفات المرفوعة
 │
-├── maintenance_backfill.py         # سكربت صيانة لتعبئة البيانات الناقصة أو تحديثها بأثر رجعي
-├── migrate_legacy.py              # سكربت لترحيل البيانات من الأنظمة القديمة (Legacy)
-├── migrate_metadata.py            # سكربت لترحيل أو تحديث هيكلة البيانات الوصفية (Metadata)
 ├── Dockerfile                      # ملف تعريف بيئة تشغيل التطبيق (Docker Image)
 ├── docker-compose.yml              # ملف تعريف الخدمات وإعدادات تشغيل الحاويات (Docker Compose)
-├── Procfile                        # ملف إعدادات التشغيل (للمنصات مثل Heroku)
 ├── requirements.txt                # قائمة المكتبات والاعتماديات الخاصة بالمشروع (Python Dependencies)
 └── README.md                       # ملف التوثيق العام للمشروع
 ```
