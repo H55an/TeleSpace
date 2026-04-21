@@ -1,1 +1,0 @@
-worker: python app.bot.main.py
