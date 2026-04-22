@@ -1,54 +1,52 @@
-# هيكلة ملفات المشروع (Project Structure)
+# Project Structure
 
-فيما يلي توضيح للشجرة الهيكلية لملفات مشروع **TeleSpace** مع وصف مختصر لوظيفة كل ملف ومجلد:
+Below is an illustration of the directory tree for the **TeleSpace** project, along with a brief description of the function of each file and folder:
 
-```plaintext
 TeleSpace/
-├── api/                            # واجهة برمجة التطبيقات (FastAPI) للتعامل مع النظام خارجيًا
-│   ├── routers/                    # تعريف مسارات الـ API (Endpoints)
-│   │   ├── auth.py                 # مسارات المصادقة وتسجيل الدخول
-│   │   ├── explorer.py             # مسارات استعراض الملفات والمجلدات
-│   │   ├── items.py                # مسارات إدارة العناصر (إنشاء، حذف، تعديل)
-│   │   ├── share.py                # مسارات مشاركة الملفات والروابط
-│   │   └── structure.py            # مسارات إدارة هيكلة المجلدات والتنظيم
-│   ├── dependencies.py             # الاعتماديات المشتركة (مثل التحقق من التوكن وجلسات قاعدة البيانات)
-│   ├── main.py                     # نقطة الانطلاق لتطبيق الـ API وتشغيل الخادم
-│   └── schemas.py                  # نماذج البيانات (Pydantic Models) للتحقق من المدخلات والمخرجات
+├── api/                            # Application Programming Interface (FastAPI) for external system interaction
+│   ├── routers/                    # Definition of API endpoints
+│   │   ├── auth.py                 # Authentication and login routes
+│   │   ├── explorer.py             # File and folder exploration routes
+│   │   ├── items.py                # Item management routes (create, delete, update)
+│   │   ├── share.py                # File and link sharing routes
+│   │   └── structure.py            # Folder structure and organization management routes
+│   ├── dependencies.py             # Shared dependencies (e.g., token validation and database sessions)
+│   ├── main.py                     # Entry point for the API application and server startup
+│   └── schemas.py                  # Data models (Pydantic Models) for input/output validation
 │
-├── app/                            # الكود المصدري الرئيسي للتطبيق
-│   ├── bot/                        # كود بوت تيليجرام
-│   │   ├── handlers/               # معالجات الأحداث وأوامر البوت
-│   │   │   ├── admin.py            # أوامر ولوحة تحكم المسؤولين
-│   │   │   ├── automation.py       # معالجات الأتمتة والمهام المجدولة
-│   │   │   ├── main_menu.py        # معالجات القائمة الرئيسية والتفاعل الأولي
-│   │   │   ├── navigation.py       # منطق التنقل بين المجلدات والقوائم
-│   │   │   ├── router.py           # الموجه الرئيسي لتوزيع التحديثات على المعالجات المناسبة
-│   │   │   ├── upload.py           # معالجة عمليات رفع الملفات وتخزينها
-│   │   │   └── user_updates.py     # معالجة تحديثات بيانات المستخدم والإعدادات
-│   │   ├── keyboards.py            # تعريف لوحات المفاتيح (الأزرار) والقوائم التفاعلية
-│   │   ├── main.py                 # نقطة تشغيل البوت وتهيئة `ApplicationBuilder`
-│   │   ├── processors.py           # منطق معالجة الرسائل والملفات قبل التخزين أو العرض
-│   │   └── utils.py                # دوال مساعدة عامة خاصة بالبوت
+├── app/                            # Main application source code
+│   ├── bot/                        # Telegram bot code
+│   │   ├── handlers/               # Event handlers and bot commands
+│   │   │   ├── admin.py            # Admin commands and dashboard
+│   │   │   ├── automation.py       # Automation handlers and scheduled tasks
+│   │   │   ├── main_menu.py        # Main menu handlers and initial interaction
+│   │   │   ├── navigation.py       # Navigation logic between folders and menus
+│   │   │   ├── router.py           # Main router for distributing updates to appropriate handlers
+│   │   │   ├── upload.py           # Handling file upload and storage processes
+│   │   │   └── user_updates.py     # Handling user data and settings updates
+│   │   ├── keyboards.py            # Definition of keyboards (buttons) and interactive menus
+│   │   ├── main.py                 # Bot startup point and `ApplicationBuilder` initialization
+│   │   ├── processors.py           # Logic for processing messages and files before storage or display
+│   │   └── utils.py                # General helper functions for the bot
 │   │
-│   └── shared/                     # وحدات مشتركة بين البوت والـ API
-│       ├── database/               # طبقة التعامل مع قاعدة البيانات
-│       │   ├── auth.py             # منطق قاعدة البيانات للمصادقة
-│       │   ├── automation.py       # عمليات قاعدة البيانات للأتمتة
-│       │   ├── containers.py       # منطق الحاويات (تخزين الملفات/الارتباطات)
-│       │   ├── core.py             # إعداد الاتصال بقاعدة البيانات وإدارة الجلسات
-│       │   ├── items.py            # عمليات قاعدة البيانات لإدارة العناصر (ملفات ومجلدات)
-│       │   ├── setup.py            # سكربتات تهيئة الجداول والبيانات الأولية
-│       │   └── users.py            # عمليات قاعدة البيانات لإدارة المستخدمين
-│       ├── ai.py                   # تكامل الذكاء الاصطناعي (مثل Google Gemini)
-│       ├── config.py               # تحميل وإدارة إعدادات المشروع ومتغيرات البيئة
-│       └── constants.py            # الثوابت العامة للمشروع
+│   └── shared/                     # Shared modules between the Bot and API
+│       ├── database/               # Database interaction layer
+│       │   ├── auth.py             # Database logic for authentication
+│       │   ├── automation.py       # Database operations for automation
+│       │   ├── containers.py       # Container logic (file/link storage)
+│       │   ├── core.py             # Database connection setup and session management
+│       │   ├── items.py            # Database operations for item management (files and folders)
+│       │   ├── setup.py            # Scripts for initializing tables and initial data
+│       │   └── users.py            # Database operations for user management
+│       ├── ai.py                   # Artificial Intelligence integration (e.g., Google Gemini)
+│       ├── config.py               # Loading and managing project settings and environment variables
+│       └── constants.py            # Global project constants
 │
-├── static/                         # الملفات الثابتة والمخزنة محليًا
-│   ├── profiles/                   # صور الملفات الشخصية للمستخدمين
-│   └── thumbnails/                 # الصور المصغرة (Thumbnails) للملفات المرفوعة
+├── static/                         # Static and locally stored files
+│   ├── profiles/                   # User profile pictures
+│   └── thumbnails/                 # Thumbnails for uploaded files
 │
-├── Dockerfile                      # ملف تعريف بيئة تشغيل التطبيق (Docker Image)
-├── docker-compose.yml              # ملف تعريف الخدمات وإعدادات تشغيل الحاويات (Docker Compose)
-├── requirements.txt                # قائمة المكتبات والاعتماديات الخاصة بالمشروع (Python Dependencies)
-└── README.md                       # ملف التوثيق العام للمشروع
-```
+├── Dockerfile                      # Application runtime environment definition (Docker Image)
+├── docker-compose.yml              # Services definition and container configuration (Docker Compose)
+├── requirements.txt                # List of project libraries and dependencies (Python Dependencies)
+└── README.md                       # General project documentation file
