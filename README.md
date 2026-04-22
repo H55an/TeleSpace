@@ -8,13 +8,16 @@
     <strong>A Next-Generation Cloud Storage System Powered by Telegram Infrastructure</strong>
     <br />
     <br />
-    <a href="#features">Features</a>
+    <a href="#key-features">Features</a>
     ·
-    <a href="#architecture">Architecture</a>
+    <a href="#system-architecture">Architecture</a>
     ·
     <a href="#getting-started">Getting Started</a>
     ·
     <a href="#api-documentation">API Docs</a>
+    ·
+    <a href="#project-structure">Structure</a>
+
   </p>
   <p align="center">
     <img src="https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python">
@@ -33,7 +36,7 @@
 
 It features a dual-interface architecture: a native **Telegram Bot** for immediate, frictionless access, and a robust **FastAPI backend** tailored for mobile app integration and external system connectivity.
 
-### ✨ Key Features
+### Key Features
 
 * 🚀 **Limitless Storage Engine:** Bypasses standard Telegram upload/download limits via a locally hosted Telegram API server.
 * 📂 **Hierarchical Organization:** Structure your data with Sections, Folders, and Sub-folders, backed by a relational PostgreSQL database.
@@ -44,7 +47,7 @@ It features a dual-interface architecture: a native **Telegram Bot** for immedia
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 TeleSpace is fully dockerized and operates on a 4-tier microservice architecture:
 
@@ -57,7 +60,7 @@ TeleSpace is fully dockerized and operates on a 4-tier microservice architecture
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 Follow these instructions to get a local copy up and running in a Dockerized environment.
 
@@ -71,7 +74,7 @@ Follow these instructions to get a local copy up and running in a Dockerized env
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/TeleSpace.git
+   git clone https://github.com/H24ai/TeleSpace.git
    cd TeleSpace
    ```
 
@@ -93,7 +96,7 @@ Follow these instructions to get a local copy up and running in a Dockerized env
 
 ---
 
-## 📡 API Documentation
+## API Documentation
 
 TeleSpace features an auto-generated, interactive Swagger UI for the REST API. Once the Docker containers are running, navigate to:
 
@@ -107,7 +110,7 @@ Authorization: Bearer <YOUR_ACCESS_TOKEN>
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```plaintext
 TeleSpace/
